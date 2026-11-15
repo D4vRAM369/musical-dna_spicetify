@@ -60,12 +60,25 @@ test("pickBatch greedy con rng alto; hueco 1 es la apuesta", () => {
   assert.ok(!b[1].bet);
 });
 
-test("pickBatch explora con rng bajo (hueco 2 en adelante)", () => {
-  const seq = [0.99, 0.1, 0.9];
-  let i = 0; // hueco 1 greedy · hueco 2: 0.1 < ε → explora, índice floor(0.9 × 2) = 1 → favoritas
-  const pools = { historial: [c("h1"), c("h2")], favoritas: [c("f1", "favoritas")], similares: [] };
-  const stats = { historial: { value: 0.9 }, favoritas: { value: 0.1 }, similares: { value: 0.5 } };
-  assert.deepEqual(core.pickBatch(pools, stats, () => seq[i++], 2).map((x) => x.uri), ["h1", "f1"]);
+test("Thompson: casi nunca prueba una fuente mala y segura; prueba bastante una incierta", () => {
+  // ε-greedy daría ~10 % de huecos a cada fuente perdedora, sin distinguir. Thompson sí distingue.
+  const many = (p, s) => Array.from({ length: 300 }, (_, k) => c(p + k, s));
+  const pools = { historial: many("h", "historial"), favoritas: many("f", "favoritas"), similares: many("s", "similares") };
+  const stats = {
+    historial: { trials: 100, hits: 60, value: 61 / 102 }, // buena y conocida
+    favoritas: { trials: 100, hits: 10, value: 11 / 102 }, // mala y conocida
+    similares: { trials: 2, hits: 1, value: 0.5 }, // apenas probada
+  };
+  const b = core.pickBatch(pools, stats, core.seededRng(1), 200);
+  assert.equal(b[0].source, "historial"); // la apuesta: mayor media, sin azar
+  const n = (s) => b.slice(1).filter((x) => x.source === s).length;
+  assert.ok(n("favoritas") < 3, "mala segura: " + n("favoritas"));
+  assert.ok(n("similares") > 40, "incierta: " + n("similares"));
+});
+
+test("Thompson: stats parciales y una sola fuente disponible", () => {
+  const pools = { historial: [c("h1"), c("h2")], favoritas: [], similares: [] };
+  assert.deepEqual(core.pickBatch(pools, { historial: { value: 0.3 } }, Math.random, 2).map((x) => x.uri), ["h1", "h2"]);
 });
 
 test("pickBatch: empate de valor sigue el orden historial, favoritas, similares", () => {

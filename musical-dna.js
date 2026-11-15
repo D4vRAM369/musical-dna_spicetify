@@ -1,4 +1,4 @@
-// Musical DNA — extensión de Spicetify: perfil de gusto explicable + mini-recomendador (bandido ε-greedy).
+// Musical DNA — extensión de Spicetify: perfil de gusto explicable + mini-recomendador (bandido con Thompson sampling).
 // Lee en SOLO LECTURA el historial de Listening Intelligence (IndexedDB "listening-intelligence" v1).
 // Capas: lógica pura (arriba, testeable con Node) → lectura de datos y adaptadores → interfaz (abajo, solo en Spotify).
 
@@ -225,8 +225,9 @@
     };
   }
 
-  // ε-greedy: cada hueco tira el dado (rng). Hueco 1 = «la apuesta» (siempre greedy). En los demás,
-  // con probabilidad ε se elige una fuente disponible al azar; si no, la de mayor valor.
+  // Thompson sampling híbrido (D-007). Hueco 1 = «la apuesta»: la fuente de mayor media, sin azar.
+  // Huecos 2+: cada fuente saca un número de su campana Beta(aciertos + 1, fallos + 1) y gana el mayor.
+  // Campana ancha (pocas pruebas) → a veces saca mucho → se explora sola; campana estrecha y baja → casi nunca gana.
   function pickBatch(pools, stats, rng, n = CONST.BATCH) {
     const next = Object.fromEntries(SOURCES.map((s) => [s, 0])); // siguiente candidato de cada fuente
     const used = new Set();
@@ -235,17 +236,27 @@
     const picks = Object.fromEntries(SOURCES.map((s) => [s, 0])); // cuántas veces sale cada fuente en ESTA tanda
     // Arranque en frío (D-005): una fuente con 0 pruebas sale una vez antes que nadie, y en empate de valor
     // gana la que menos ha salido en la tanda. Así, sin datos, la tanda rota entre fuentes en vez de repetir una.
+    const untried = (avail) => avail.find((s) => stats[s]?.trials === 0 && picks[s] === 0);
+    // Greedy: mayor media; en empate, la que menos ha salido en la tanda (y después el orden de SOURCES).
     const greedy = (avail) =>
-      avail.find((s) => stats[s]?.trials === 0 && picks[s] === 0) ??
-      avail.reduce((best, s) => (value(s) > value(best) || (value(s) === value(best) && picks[s] < picks[best]) ? s : best));
+      untried(avail) ??
+      avail.reduce((b, s) => (value(s) > value(b) || (value(s) === value(b) && picks[s] < picks[b]) ? s : b));
+    const draw = (s) => {
+      const hits = stats[s]?.hits ?? 0;
+      return betaSample(hits + 1, (stats[s]?.trials ?? 0) - hits + 1, rng); // fallos = pruebas − aciertos
+    };
+    // Thompson: gana la mayor muestra; en empate (casi imposible con azar real), el orden de SOURCES.
+    const thompson = (avail) => {
+      if (untried(avail)) return untried(avail);
+      const d = Object.fromEntries(avail.map((s) => [s, draw(s)]));
+      return avail.reduce((b, s) => (d[s] > d[b] ? s : b));
+    };
     while (out.length < n) {
       // Disponible = le quedan candidatos no usados (salta duplicados entre fuentes).
       for (const s of SOURCES) while (pools[s]?.[next[s]] && used.has(pools[s][next[s]].uri)) next[s] += 1;
       const avail = SOURCES.filter((s) => pools[s]?.[next[s]]);
       if (!avail.length) break;
-      const roll = rng();
-      const explore = out.length > 0 && roll < CONST.EPSILON;
-      const src = explore ? avail[Math.floor(rng() * avail.length)] : greedy(avail);
+      const src = out.length === 0 ? greedy(avail) : thompson(avail);
       picks[src] += 1;
       const pick = pools[src][next[src]++];
       used.add(pick.uri);
