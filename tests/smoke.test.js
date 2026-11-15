@@ -1,0 +1,154 @@
+// Extremo a extremo con un Spotify simulado: icono → panel → pestañas → ▶ → Borrar.
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const vm = require("node:vm");
+const path = require("node:path");
+const { fakeIDB } = require("./fake-idb.js");
+const { now, r } = require("./helpers.js");
+
+const SRC = fs.readFileSync(path.join(__dirname, "..", "musical-dna.js"), "utf8");
+
+// DOM falso mínimo: lo justo que usa el panel.
+function fakeEl(tag) {
+  return { tag, children: [], style: {}, textContent: "", title: "", src: "", listeners: {},
+    append(...c) { this.children.push(...c); }, replaceChildren(...c) { this.children = c; },
+    addEventListener(t, cb) { this.listeners[t] = cb; }, click() {} };
+}
+const textOf = (n) => [n.textContent, ...n.children.map(textOf)].join(" ");
+const contains = (n, target) => n === target || n.children.some((c) => contains(c, target));
+// Como el PopupModal: primero nuestro handler; luego, ¿sigue lo pulsado dentro? false = el modal se cerraría (Error #6).
+function click(root, node) {
+  node.listeners.click();
+  return contains(root, node);
+}
+const findButton = (n, text) => (n.tag === "button" && n.textContent === text ? n : n.children.map((c) => findButton(c, text)).find(Boolean));
+const tick = async (k = 10) => { for (let i = 0; i < k; i++) await new Promise((res) => setTimeout(res, 0)); };
+
+const LI = (records) => ({ "listening-intelligence": { meta: { meta: { schemaVersion: 1, observingSince: now - 30 * 864e5 } }, records } });
+const likedItem = (i) => ({ uri: "spotify:track:fav" + i, name: "Fav" + i, album: { artist: { uri: "spotify:artist:f" + i, name: "F" + i }, images: [] } });
+
+async function boot({ idb, disk = {}, liked = [], gqlFails = true } = {}) {
+  const L = { notes: [] };
+  class FakeDate extends Date {
+    constructor(...a) { super(...(a.length ? a : [now])); }
+    static now() { return now; }
+  }
+  const Spicetify = {
+    Player: {}, // ready() solo comprueba que exista
+    showNotification: (msg, isError) => L.notes.push({ msg, isError: !!isError }),
+    LocalStorage: { get: (k) => (k in disk ? disk[k] : null), set: (k, v) => (disk[k] = String(v)), remove: (k) => delete disk[k] },
+    Platform: {
+      LibraryAPI: { getTracks: async ({ offset }) => ({ items: offset === 0 ? liked : [], totalLength: 0 }) },
+      ClipboardAPI: { copy: (t) => (L.copied = t) },
+    },
+    GraphQL: { Definitions: { queryArtistRelated: 1, queryArtistOverview: 2 }, Request: async () => { if (gqlFails) throw new Error("caído"); } },
+    addToQueue: async (items) => (L.queued = items),
+    Topbar: { Button: class { constructor(label, icon, onClick) { L.topbarClick = onClick; } } },
+    PopupModal: { display: (o) => (L.modal = o) },
+  };
+  Spicetify.Player.playUri = (u) => (L.played = u);
+  const win = {};
+  const ctx = { Spicetify, window: win, document: { createElement: fakeEl }, console: { log() {}, warn() {}, error() {} },
+    setTimeout, Date: FakeDate, indexedDB: idb };
+  vm.runInNewContext(SRC, ctx);
+  await tick();
+  return { L, disk, win, idb };
+}
+async function open(env) {
+  await env.L.topbarClick();
+  await tick(20);
+  return env.L.modal.content;
+}
+
+test("sin LI: aviso y la base no se crea", async () => {
+  const env = await boot({ idb: fakeIDB({}) });
+  const root = await open(env);
+  assert.match(textOf(root), /Instala Listening Intelligence/);
+  assert.equal(env.idb.created, false);
+  assert.equal(env.L.modal.title, "Musical DNA");
+});
+
+test("con datos: abre en Para ti con la apuesta, porqué y brazo caído", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5), r("a", 6), r("b", 5)])), liked: [likedItem(1), likedItem(2)] });
+  const root = await open(env);
+  const t = textOf(root);
+  assert.match(t, /La apuesta del bandido/);
+  assert.match(t, /hace 5 días que no suena/);
+  assert.match(t, /en tus favoritas/);
+  assert.match(t, /Similares: Spotify no responde/);
+  assert.equal(env.win.MusicalDNA.li.status, "ok");
+});
+
+test("todos los brazos vacíos: explica por qué", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 0), r("b", 1)])) });
+  const t = textOf(await open(env));
+  assert.match(t, /sonó en las últimas 72 h/);
+  assert.match(t, /Favoritas:/);
+  assert.match(t, /Similares: Spotify no responde/);
+});
+
+test("▶ guarda la prueba, reproduce y el modal sigue abierto (Error #6)", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5)])) });
+  const root = await open(env);
+  assert.ok(click(root, findButton(root, "▶")));
+  assert.equal(JSON.parse(env.disk["musical-dna:v1"]).trials.length, 1);
+  assert.equal(JSON.parse(env.disk["musical-dna:v1"]).trials[0].action, "play");
+  assert.equal(env.L.played, "a");
+});
+
+test("＋ añade a la cola y anota la prueba", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5)])) });
+  const root = await open(env);
+  assert.ok(click(root, findButton(root, "＋")));
+  await tick();
+  assert.equal(JSON.stringify(env.L.queued), JSON.stringify([{ uri: "a" }])); // el array viene de otro contexto vm
+  assert.equal(JSON.parse(env.disk["musical-dna:v1"]).trials[0].action, "queue");
+});
+
+test("pestañas, chips y Nuevas sugerencias no salen del DOM al pulsarlos (Error #6)", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5), r("b", 6)])) });
+  const root = await open(env);
+  for (const t of ["Tu ADN", "Cómo aprende", "Para ti", "Nuevas sugerencias"]) assert.ok(click(root, findButton(root, t)), t);
+  click(root, findButton(root, "Tu ADN"));
+  for (const h of ["Reciente", "Medio", "Total"]) assert.ok(click(root, findButton(root, h)), h);
+  assert.match(textOf(root), /TUS SEMILLAS/);
+  assert.match(textOf(root), /Basado en 2 escuchas desde/);
+});
+
+test("Cómo aprende muestra la frase del bandido y las pruebas", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5)])) });
+  const root = await open(env);
+  click(root, findButton(root, "▶"));
+  click(root, findButton(root, "Cómo aprende"));
+  const t = textOf(root);
+  assert.match(t, /Ahora apostaría por/);
+  assert.match(t, /⏳/);
+});
+
+test("Borrar pide doble clic y solo borra su clave", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5)])), disk: { "otra:clave": "x" } });
+  const root = await open(env);
+  click(root, findButton(root, "▶"));
+  assert.ok(click(root, findButton(root, "Borrar")));
+  assert.ok(env.disk["musical-dna:v1"]);
+  assert.ok(click(root, findButton(root, "¿Seguro? Pulsa otra vez")));
+  assert.equal(env.disk["musical-dna:v1"], undefined);
+  assert.equal(env.disk["otra:clave"], "x");
+});
+
+test("Exportar copia las pruebas al portapapeles", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5)])) });
+  const root = await open(env);
+  click(root, findButton(root, "▶"));
+  click(root, findButton(root, "Exportar"));
+  assert.equal(JSON.parse(env.L.copied).trials.length, 1);
+});
+
+test("almacén corrupto: aviso una vez, sin romper", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5)])), disk: { "musical-dna:v1": "{no" } });
+  await open(env);
+  await open(env);
+  assert.equal(env.L.notes.filter((n) => n.isError).length, 1);
+  assert.match(textOf(env.L.modal.content), /La apuesta del bandido/);
+});

@@ -1,0 +1,13 @@
+# Documentación interna (Chronicler) y notas de planificación: no se versionan
+docs/
+
+# Estado local de herramientas
+.omc/
+.superpowers/
+.claude/
+
+# Exportaciones del historial de escucha (datos personales)
+listening-intelligence-*.json
+musical-dna-*.json
+
+node_modules/
