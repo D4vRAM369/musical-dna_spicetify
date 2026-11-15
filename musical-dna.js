@@ -598,6 +598,7 @@
       let store = loadStore();
       let data = null; // null = cargando
       let observer = null; // IntersectionObserver del centinela de «Para ti» (carga automática)
+      let focus = null; // fuente elegida al pulsar su planeta (D-011); null = todas
 
       // Lo FIJO (Error #6 de LI): pestañas, chips, «Nuevas sugerencias» y pie se crean UNA vez y no salen del DOM.
       const COL = "display:flex;flex-direction:column;gap:12px";
@@ -674,6 +675,7 @@
       function appendBatch(now) {
         const b = session.batch;
         const { pools } = buildPools(data, store.trials, b.items.map((c) => c.uri), now);
+        if (focus) for (const s of SOURCES) if (s !== focus) pools[s] = []; // con filtro, solo esa fuente
         const wave = (b.items.at(-1)?.wave ?? 0) + 1;
         const more = pickBatch(pools, armStats(store.trials, data.li.records, now), Math.random, CONST.BATCH, { bet: false });
         if (!more.length) b.done = true; // se agotaron los candidatos: el centinela deja de observar
@@ -681,6 +683,7 @@
       }
       function newBatch(prev) {
         if (!data || data.li.status !== "ok") return;
+        focus = null; // «Nuevas sugerencias» vuelve a mostrar todas las fuentes
         makeBatch(prev, Date.now());
         render();
       }
@@ -805,8 +808,10 @@
           ring.className = "mdna-ring";
           sys.append(ring);
         }
-        const sun = el("div", "TÚ");
+        const sun = el("div", "TÚ", "cursor:pointer");
         sun.className = "mdna-sun";
+        sun.title = "Ver todas las fuentes";
+        sun.addEventListener("click", () => setFocus(null));
         sys.append(sun);
         SOURCES.forEach((s, i) => {
           const [r, secs] = ORBITS[i];
@@ -815,16 +820,45 @@
           const orbit = el("div", null, `--r:${r}px;animation-duration:${secs}s;animation-delay:-${now % (secs * 1000)}ms`);
           orbit.className = "mdna-orbit";
           const color = on ? COLORS[s] : "#555";
-          const planet = el("div", null, `width:${size}px;height:${size}px;background:${color};${on ? `box-shadow:0 0 ${size / 2}px ${color}` : ""}`);
+          const ring = focus === s ? ";outline:2px solid var(--spice-text);outline-offset:3px" : ""; // planeta elegido
+          const grow = focus === s ? 1.3 : 1;
+          const planet = el("div", null, `width:${size * grow}px;height:${size * grow}px;background:${color};${on ? `box-shadow:0 0 ${size}px ${color}` : ""}${ring}`);
           planet.className = "mdna-planet";
           const tag = el("div", on ? `${LABEL[s]} ${Math.round(p[s] * 100)} %` : `${LABEL[s]} · sin datos`);
           tag.className = "mdna-tag";
+          orbit.style.cssText += ";cursor:pointer";
+          orbit.title = focus === s ? "Ver todas las fuentes" : `Solo ${LABEL[s]}`;
+          orbit.addEventListener("click", () => setFocus(focus === s ? null : s)); // mismo planeta otra vez = quitar filtro
           orbit.append(planet, tag);
           sys.append(orbit);
         });
         const wrap = el("div", null, "display:flex;flex-direction:column;gap:4px");
-        wrap.append(sys, el("div", banditSentence(stats, available), SUB + ";text-align:center;font-size:12px"));
+        wrap.append(sys, focus ? sourceCard(focus, stats, p) : el("div", banditSentence(stats, available), SUB + ";text-align:center;font-size:12px"));
         return wrap;
+      }
+
+      // Pulsar un planeta (D-011): filtra la lista y muestra su ficha. Redibujo diferido (Error #6).
+      function setFocus(s) {
+        focus = s;
+        session.batch.done = false; // «agotado» dependía del filtro anterior: la próxima carga lo recalcula
+        setTimeout(render, 0);
+      }
+
+      // Ficha de la fuente enfocada: datos del bandido + «▶ Poner una de …» (o por qué no hay sugerencias).
+      function sourceCard(s, stats, p) {
+        const card = el("div", null, "display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px;border-radius:8px;background:var(--spice-card)");
+        const reason = session.batch.why[s];
+        if (!(s in p)) {
+          card.append(el("div", `${LABEL[s]} · no disponible: ${reason ?? "sin candidatos ahora mismo"}`, SUB + ";text-align:center"));
+          return card;
+        }
+        const a = stats[s];
+        card.append(el("div", `${LABEL[s]} · ${a.hits}/${a.trials} aciertos · ${Math.round(p[s] * 100)} % de ser la mejor · ${a.pending} pendientes`, "font-size:12px;text-align:center"));
+        // La primera sugerencia de esa fuente que aún no has tocado (ni descartado).
+        const next = session.batch.items.find((c) => c.source === s && !session.clicked.has(c.uri) && !session.dismissed.has(c.uri));
+        if (next) card.append(button(`▶ Poner una de ${LABEL[s]}`, ON, () => tryIt(next, "play")));
+        else card.append(el("div", "Ya has probado todas las de esta tanda", SUB));
+        return card;
       }
 
       function renderForYou(now) {
@@ -833,8 +867,10 @@
         const stats = armStats(store.trials, data.li.records, now);
         const out = [solarSystem(stats, session.batch.available, now)];
         if (!items.length) out.push(el("div", "Ahora mismo no hay nada que sugerirte:", "font-weight:700"));
-        items.forEach((c, i) => {
-          if (c.wave > 1 && items[i - 1]?.wave !== c.wave) out.push(el("div", `✦ Tanda ${c.wave} ✦`, LABEL_H + ";text-align:center"));
+        const shown = focus ? items.filter((c) => c.source === focus) : items;
+        if (focus) out.push(el("div", `Filtrando: solo ${LABEL[focus]} · pulsa TÚ para ver todas`, SUB + ";text-align:center"));
+        shown.forEach((c, i) => {
+          if (c.wave > 1 && shown[i - 1]?.wave !== c.wave) out.push(el("div", `✦ Tanda ${c.wave} ✦`, LABEL_H + ";text-align:center"));
           out.push(row(c, stats, c.bet));
         });
         for (const s of SOURCES) if (why[s]) out.push(el("div", `${LABEL[s]}: ${why[s]}`, SUB));

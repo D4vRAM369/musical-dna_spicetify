@@ -301,3 +301,80 @@ test("la cabecera sigue fija con el estilo espacial: root con overflow:clip y ca
   const header = all(root, (n) => /position:sticky/.test(n.style.cssText ?? ""))[0];
   assert.match(header.style.cssText, /z-index:2/); // body y pie tienen z-index:1: la cabecera debe pintarse encima
 });
+
+// Planeta pulsable de una fuente: el nodo .mdna-orbit cuyo texto incluye su nombre.
+const planet = (root, label) => all(root, (n) => /mdna-orbit/.test(n.className ?? "") && textOf(n).includes(label))[0];
+const sun = (root) => all(root, (n) => /mdna-sun/.test(n.className ?? ""))[0];
+
+test("pulsar un planeta filtra la lista, muestra su ficha y no cierra el modal", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5), r("b", 6)])), liked: [likedItem(1), likedItem(2)] });
+  const root = await open(env);
+  assert.match(textOf(root), /Fav1/);
+  assert.match(textOf(root), /\ba\b/);
+  assert.ok(click(root, planet(root, "Favoritas")), "Error #6: el planeta pulsado sigue en el DOM");
+  await tick();
+  const t = textOf(root);
+  assert.match(t, /Filtrando: solo Favoritas/);
+  assert.match(t, /Favoritas · 0\/0 aciertos · \d+ % de ser la mejor · 0 pendientes/);
+  assert.match(t, /Fav1/);
+  assert.doesNotMatch(t, /hace 5 días que no suena/); // filas de Historial ocultas
+  click(root, sun(root)); // TÚ quita el filtro
+  await tick();
+  assert.doesNotMatch(textOf(root), /Filtrando/);
+  assert.match(textOf(root), /hace 5 días que no suena/);
+});
+
+test("pulsar el mismo planeta otra vez quita el filtro", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5)])), liked: [likedItem(1)] });
+  const root = await open(env);
+  click(root, planet(root, "Favoritas"));
+  await tick();
+  click(root, planet(root, "Favoritas"));
+  await tick();
+  assert.doesNotMatch(textOf(root), /Filtrando/);
+});
+
+test("▶ Poner una de <fuente> reproduce su primera sugerencia sin tocar y anota la prueba", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5)])), liked: [likedItem(1)] });
+  const root = await open(env);
+  click(root, planet(root, "Favoritas"));
+  await tick();
+  assert.ok(click(root, findButton(root, "▶ Poner una de Favoritas")));
+  await tick();
+  assert.equal(env.L.played, "spotify:track:fav1");
+  const trials = JSON.parse(env.disk["musical-dna:v1"]).trials;
+  assert.deepEqual(trials.map((t) => [t.source, t.action]), [["favoritas", "play"]]);
+});
+
+test("planeta gris: la ficha explica por qué no hay sugerencias", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5)])) }); // GraphQL caído
+  const root = await open(env);
+  click(root, planet(root, "Similares"));
+  await tick();
+  assert.match(textOf(root), /Similares · no disponible: Spotify no responde/);
+});
+
+test("con filtro, la carga automática solo trae canciones de esa fuente", async () => {
+  const env = await boot({ idb: fakeIDB(LI(muchos(25))), io: true });
+  const root = await open(env);
+  click(root, planet(root, "Historial"));
+  await tick();
+  env.L.io.fire();
+  await tick();
+  assert.match(textOf(root), /Tanda 2/);
+  assert.equal(new Set(filas(root)).size, 20);
+});
+
+test("si se agota la fuente filtrada, al quitar el filtro se puede seguir cargando de las demás", async () => {
+  const env = await boot({ idb: fakeIDB(LI(muchos(25))), liked: [likedItem(1)], io: true });
+  const root = await open(env);
+  click(root, planet(root, "Favoritas"));
+  await tick();
+  env.L.io.fire(); // Favoritas solo tiene 1 → se agota
+  await tick();
+  assert.match(textOf(root), /No quedan más estrellas/);
+  click(root, sun(root));
+  await tick();
+  assert.doesNotMatch(textOf(root), /No quedan más estrellas/);
+  assert.equal(env.L.io.observed.length, 1); // vuelve a haber centinela
+});
