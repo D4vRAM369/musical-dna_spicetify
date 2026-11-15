@@ -28,8 +28,16 @@ const tick = async (k = 10) => { for (let i = 0; i < k; i++) await new Promise((
 const LI = (records) => ({ "listening-intelligence": { meta: { meta: { schemaVersion: 1, observingSince: now - 30 * 864e5 } }, records } });
 const likedItem = (i) => ({ uri: "spotify:track:fav" + i, name: "Fav" + i, album: { artist: { uri: "spotify:artist:f" + i, name: "F" + i }, images: [] } });
 
-async function boot({ idb, disk = {}, liked = [], gqlFails = true, addFails = false } = {}) {
+async function boot({ idb, disk = {}, liked = [], gqlFails = true, addFails = false, io = false } = {}) {
   const L = { notes: [] };
+  // IntersectionObserver falso: `L.io.fire()` = «el centinela ha entrado en pantalla».
+  class FakeIO {
+    constructor(cb) { this.cb = cb; this.targets = []; L.io = this; }
+    observe(t) { this.targets.push(t); }
+    disconnect() { this.targets = []; }
+    get observed() { return this.targets; }
+    fire() { this.cb(this.targets.map((target) => ({ isIntersecting: true, target }))); }
+  }
   class FakeDate extends Date {
     constructor(...a) { super(...(a.length ? a : [now])); }
     static now() { return now; }
@@ -54,6 +62,7 @@ async function boot({ idb, disk = {}, liked = [], gqlFails = true, addFails = fa
   const win = {};
   const ctx = { Spicetify, window: win, document: { createElement: fakeEl }, console: { log() {}, warn() {}, error() {} },
     setTimeout, Date: FakeDate, indexedDB: idb };
+  if (io) ctx.IntersectionObserver = FakeIO;
   vm.runInNewContext(SRC, ctx);
   await tick();
   return { L, disk, win, idb };
@@ -206,4 +215,51 @@ test("✗ descarta: anota fallo, sustituye la prueba pendiente, muestra ↺ y �
   trials = JSON.parse(env.disk["musical-dna:v1"]).trials;
   assert.deepEqual(trials.map((t) => t.action), ["play"]); // vuelve la prueba de antes
   assert.ok(findButton(root, "✗"));
+});
+
+const muchos = (n) => Array.from({ length: n }, (_, i) => r("t" + i, 5)); // n canciones de historial, cada una de su artista
+const filas = (root) => (textOf(root).match(/\bt\d+\b/g) ?? []);
+
+test("al llegar al final se añade otra tanda sin repetir y con separador", async () => {
+  const env = await boot({ idb: fakeIDB(LI(muchos(25))), io: true });
+  const root = await open(env);
+  const antes = new Set(filas(root));
+  assert.equal(antes.size, 10);
+  env.L.io.fire();
+  await tick();
+  const t = textOf(root);
+  assert.match(t, /Tanda 2/);
+  const despues = filas(root);
+  assert.equal(despues.length, 20); // 20 filas…
+  assert.equal(new Set(despues).size, 20); // …y ninguna repetida
+});
+
+test("sin más candidatos: mensaje final y no observa más", async () => {
+  const env = await boot({ idb: fakeIDB(LI(muchos(12))), io: true });
+  const root = await open(env);
+  env.L.io.fire();
+  await tick();
+  env.L.io.fire();
+  await tick();
+  assert.match(textOf(root), /No quedan más estrellas por ahora/);
+  assert.equal(env.L.io.observed.length, 0);
+  assert.equal(new Set(filas(root)).size, 12);
+});
+
+test("Nuevas sugerencias tras varias tandas vuelve a una sola tanda con apuesta", async () => {
+  const env = await boot({ idb: fakeIDB(LI(muchos(25))), io: true });
+  const root = await open(env);
+  env.L.io.fire();
+  await tick();
+  click(root, findButton(root, "Nuevas sugerencias"));
+  await tick();
+  assert.doesNotMatch(textOf(root), /Tanda 2/);
+  assert.match(textOf(root), /La apuesta del bandido/);
+});
+
+test("sin IntersectionObserver el panel funciona (sin carga automática)", async () => {
+  const env = await boot({ idb: fakeIDB(LI(muchos(25))) });
+  const root = await open(env);
+  assert.match(textOf(root), /La apuesta del bandido/);
+  assert.equal(new Set(filas(root)).size, 10);
 });

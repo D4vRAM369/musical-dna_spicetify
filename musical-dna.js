@@ -571,6 +571,7 @@
       let horizon = "total";
       let store = loadStore();
       let data = null; // null = cargando
+      let observer = null; // IntersectionObserver del centinela de «Para ti» (carga automática)
 
       // Lo FIJO (Error #6 de LI): pestañas, chips, «Nuevas sugerencias» y pie se crean UNA vez y no salen del DOM.
       const COL = "display:flex;flex-direction:column;gap:12px";
@@ -633,9 +634,20 @@
       function makeBatch(prev, now) {
         const lastBatch = prev ? prev.filter((c) => !session.clicked.has(c.uri)).map((c) => c.uri) : [];
         const { pools, why } = buildPools(data, store.trials, lastBatch, now);
-        session.batch = { items: pickBatch(pools, armStats(store.trials, data.li.records, now), Math.random), why, available: SOURCES.filter((s) => pools[s].length) };
+        const items = pickBatch(pools, armStats(store.trials, data.li.records, now), Math.random).map((c) => ({ ...c, wave: 1 }));
+        session.batch = { items, why, available: SOURCES.filter((s) => pools[s].length), done: false };
         session.clicked = new Set();
         session.dismissed = new Map(); // las descartadas ya no salen en la tanda nueva: su ↺ deja de tener sentido
+      }
+      // Carga automática (D-010): otra tanda de 10 debajo, sin repetir NADA de lo ya mostrado y sin «apuesta».
+      // No llama a Spotify: reparte de nuevo los candidatos que ya se leyeron al abrir el panel.
+      function appendBatch(now) {
+        const b = session.batch;
+        const { pools } = buildPools(data, store.trials, b.items.map((c) => c.uri), now);
+        const wave = (b.items.at(-1)?.wave ?? 0) + 1;
+        const more = pickBatch(pools, armStats(store.trials, data.li.records, now), Math.random, CONST.BATCH, { bet: false });
+        if (!more.length) b.done = true; // se agotaron los candidatos: el centinela deja de observar
+        b.items = [...b.items, ...more.map((c) => ({ ...c, wave }))];
       }
       function newBatch(prev) {
         if (!data || data.li.status !== "ok") return;
@@ -754,8 +766,25 @@
         const stats = armStats(store.trials, data.li.records, now);
         const out = [];
         if (!items.length) out.push(el("div", "Ahora mismo no hay nada que sugerirte:", "font-weight:700"));
-        items.forEach((c, i) => out.push(row(c, stats, i === 0)));
+        items.forEach((c, i) => {
+          if (c.wave > 1 && items[i - 1]?.wave !== c.wave) out.push(el("div", `✦ Tanda ${c.wave} ✦`, LABEL_H + ";text-align:center"));
+          out.push(row(c, stats, c.bet));
+        });
         for (const s of SOURCES) if (why[s]) out.push(el("div", `${LABEL[s]}: ${why[s]}`, SUB));
+        if (session.batch.done) out.push(el("div", "No quedan más estrellas por ahora", SUB + ";text-align:center"));
+        else if (items.length && typeof IntersectionObserver === "function") {
+          // Centinela: un div invisible al final. Cuando está a < 300 px de verse, se añade otra tanda.
+          // Así no dependemos de qué elemento de Spotify hace scroll (su clase puede cambiar).
+          const sentinel = el("div", null, "height:1px");
+          observer = new IntersectionObserver((entries) => {
+            if (!entries.some((e) => e.isIntersecting) || session.batch.done) return;
+            observer.disconnect(); // una carga por centinela; render() crea el siguiente
+            appendBatch(Date.now());
+            render();
+          }, { rootMargin: "300px" });
+          observer.observe(sentinel);
+          out.push(sentinel);
+        }
         return out;
       }
       function renderLearn(now) {
@@ -799,6 +828,8 @@
       }
 
       function render() {
+        observer?.disconnect(); // el centinela anterior sale del DOM: dejar de observarlo
+        observer = null;
         const now = Date.now();
         chips.forEach((c, i) => (c.style.cssText = BTN + (HZ[i][0] === horizon ? ON : OFF) + (view === "dna" ? "" : ";display:none")));
         if (!data) return body.replaceChildren(el("div", "Cargando…", SUB));
