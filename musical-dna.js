@@ -173,6 +173,7 @@
   // Excepción: guardar en «Canciones que te gustan» (action "like") es un acierto explícito, no hace falta escucharla.
   function resolveTrial(trial, records, now) {
     if (trial.action === "like") return "hit";
+    if (trial.action === "dismiss") return "miss"; // ✗ «no me la sugieras más»: fallo explícito (D-009)
     const end = trial.at + CONST.ATTR_WINDOW_MS;
     let first = null;
     for (const r of trackRecords(records))
@@ -181,11 +182,11 @@
     return now < end ? "pending" : "discarded";
   }
 
-  // Lo que nunca se sugiere ahora: antigusto, lo que sonó hace < 72 h, pruebas pendientes y la tanda anterior.
+  // Lo que nunca se sugiere ahora: antigusto, descartadas (✗), lo que sonó hace < 72 h, pruebas pendientes y la tanda anterior.
   function excludedUris({ records, trials, lastBatch, now }) {
     const ex = new Set(antitaste(records).map((a) => a.uri));
     for (const r of trackRecords(records)) if (r.startedAt >= now - CONST.RECENT_EXCLUDE_MS) ex.add(r.uri);
-    for (const t of trials) if (resolveTrial(t, records, now) === "pending") ex.add(t.uri);
+    for (const t of trials) if (t.action === "dismiss" || resolveTrial(t, records, now) === "pending") ex.add(t.uri); // descartadas: siempre
     for (const u of lastBatch) ex.add(u);
     return ex;
   }
@@ -449,7 +450,8 @@
   // Un solo estado por sesión de Spotify. La tanda se conserva entre aperturas del panel; solo
   // «Nuevas sugerencias» la regenera. Las respuestas de GraphQL se guardan en `gqlCache`.
   // `saved` = URIs que sabemos en «Canciones que te gustan» (se siembra con las favoritas leídas).
-  const session = { batch: null, clicked: new Set(), saved: new Set(), gqlCache: new Map(), warned: false };
+  // `dismissed` = URIs descartadas con ✗ en esta tanda → pruebas que sustituyeron (para que ↺ las devuelva).
+  const session = { batch: null, clicked: new Set(), saved: new Set(), dismissed: new Map(), gqlCache: new Map(), warned: false };
 
   function loadStore() {
     const { state, warning } = parseStore(Spicetify.LocalStorage.get(CONST.STORE_KEY));
@@ -632,6 +634,7 @@
         const { pools, why } = buildPools(data, store.trials, lastBatch, now);
         session.batch = { items: pickBatch(pools, armStats(store.trials, data.li.records, now), Math.random), why, available: SOURCES.filter((s) => pools[s].length) };
         session.clicked = new Set();
+        session.dismissed = new Map(); // las descartadas ya no salen en la tanda nueva: su ↺ deja de tener sentido
       }
       function newBatch(prev) {
         if (!data || data.li.status !== "ok") return;
@@ -704,12 +707,44 @@
           el("div", `${c.why} · ${LABEL[c.source]} ${s.hits}/${s.trials} ✓`, "font-size:11px;color:var(--spice-button);" + CUT),
         );
         const btns = el("div", null, "display:flex;gap:6px;flex:none");
-        btns.append(
-          button("▶", ON + ";width:32px;height:32px;padding:0", () => tryIt(c, "play")),
-          saveButton(c),
-        );
+        const SQ = ";width:32px;height:32px;padding:0";
+        if (session.dismissed.has(c.uri)) {
+          // Descartada: se queda atenuada hasta la próxima tanda, con ↺ por si fue sin querer.
+          r.style.opacity = "0.5";
+          text.append(el("div", "descartada: no te la volveré a sugerir", SUB + ";font-size:11px"));
+          const undo = button("↺", OFF + SQ, () => undoDismiss(c));
+          undo.title = "Deshacer el descarte";
+          btns.append(undo);
+        } else {
+          const no = button("✗", OFF + SQ, () => dismiss(c));
+          no.title = "No me la sugieras más";
+          btns.append(button("▶", ON + SQ, () => tryIt(c, "play")), saveButton(c), no);
+        }
         r.append(cover(c, big ? 64 : 40), text, btns);
         return r;
+      }
+
+      // ✗ «no me la sugieras más» (D-009): fallo para la fuente y exclusión permanente.
+      // Sustituye a la prueba pendiente o al like de esa canción (no puede ser acierto y fallo a la vez);
+      // lo sustituido se guarda en la sesión para que ↺ lo devuelva tal cual. No toca tu biblioteca.
+      function dismiss(c) {
+        const now = Date.now();
+        const replaced = store.trials.filter((t) => t.uri === c.uri && (t.action === "like" || resolveTrial(t, data.li.records, now) === "pending"));
+        store = addTrial({ ...store, trials: store.trials.filter((t) => !replaced.includes(t)) },
+          { uri: c.uri, source: c.source, why: c.why, at: now, action: "dismiss" });
+        saveStore(store);
+        session.dismissed.set(c.uri, replaced);
+        session.clicked.add(c.uri);
+        Spicetify.showNotification("Descartada: no te la volveré a sugerir");
+        setTimeout(render, 0); // Error #6: el botón pulsado sigue en el DOM mientras el clic sube
+      }
+      function undoDismiss(c) {
+        const replaced = session.dismissed.get(c.uri) ?? [];
+        store = { ...store, trials: [...store.trials.filter((t) => !(t.uri === c.uri && t.action === "dismiss")), ...replaced] };
+        saveStore(store);
+        session.dismissed.delete(c.uri);
+        Spicetify.showNotification("Descarte deshecho");
+        setTimeout(render, 0);
       }
 
       function renderForYou(now) {
@@ -741,7 +776,7 @@
         const last = store.trials.slice(-10).reverse();
         if (!last.length) out.push(el("div", "Aún no has probado ninguna sugerencia: pulsa ▶ o ＋ en «Para ti».", SUB));
         for (const t of last) out.push(el("div", `${sym[resolveTrial(t, data.li.records, now)]} ${LABEL[t.source] ?? t.source} · ${t.why ?? t.uri}`, SUB + ";" + CUT));
-        out.push(el("div", "✓ escuchada ≥30 s o guardada · ✗ saltada · ⏳ esperando (6 h) · — no llegó a sonar", SUB + ";font-size:11px"));
+        out.push(el("div", "✓ escuchada ≥30 s o guardada · ✗ saltada o descartada · ⏳ esperando (6 h) · — no llegó a sonar", SUB + ";font-size:11px"));
         return out;
       }
 

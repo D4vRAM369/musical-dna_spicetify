@@ -188,3 +188,22 @@ test("▶ varias veces en la misma sugerencia: una sola prueba mientras esté pe
   assert.equal(JSON.parse(env.disk["musical-dna:v1"]).trials.length, 1);
   assert.equal(env.L.played, "a"); // sigue reproduciendo
 });
+
+test("✗ descarta: anota fallo, sustituye la prueba pendiente, muestra ↺ y ↺ lo deshace", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5)])) });
+  const root = await open(env);
+  click(root, findButton(root, "▶"));
+  await tick();
+  assert.ok(click(root, findButton(root, "✗")), "el modal sigue abierto (Error #6)");
+  await tick();
+  let trials = JSON.parse(env.disk["musical-dna:v1"]).trials;
+  assert.deepEqual(trials.map((t) => t.action), ["dismiss"]); // el ▶ pendiente se sustituye
+  assert.ok(findButton(root, "↺"));
+  assert.equal(findButton(root, "▶"), undefined); // fila descartada: solo ↺
+  assert.match(textOf(root), /descartada/);
+  click(root, findButton(root, "↺"));
+  await tick();
+  trials = JSON.parse(env.disk["musical-dna:v1"]).trials;
+  assert.deepEqual(trials.map((t) => t.action), ["play"]); // vuelve la prueba de antes
+  assert.ok(findButton(root, "✗"));
+});

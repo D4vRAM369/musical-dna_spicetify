@@ -176,3 +176,13 @@ test("variedad: sin artistUri se usa el nombre; «—» (desconocido) no cuenta 
   const pools = { historial: [anon("x1", "Fito"), anon("x2", "Fito"), anon("x3", "Fito"), anon("y1", "—"), anon("y2", "—"), anon("y3", "—")], favoritas: [], similares: [] };
   assert.deepEqual(core.pickBatch(pools, core.armStats([], [], now), () => 0.99, 10).map((x) => x.uri), ["x1", "x2", "y1", "y2", "y3"]);
 });
+
+test("descartar (✗) es fallo al instante y excluye la canción para siempre", () => {
+  const dis = (uri, minsAgo) => ({ ...T(uri, minsAgo), action: "dismiss" });
+  assert.equal(core.resolveTrial(dis("d", 1), [], now), "miss");
+  assert.equal(core.resolveTrial(dis("d", 60), [at(r("d", 0), 50)], now), "miss"); // aunque luego suene entera
+  assert.equal(core.armStats([dis("d", 1)], [], now).historial.trials, 1);
+  assert.equal(core.armStats([dis("d", 1)], [], now).historial.hits, 0);
+  const ex = core.excludedUris({ records: [], trials: [dis("old", 30 * 24 * 60)], lastBatch: [], now });
+  assert.ok(ex.has("old")); // un mes después sigue excluida
+});
