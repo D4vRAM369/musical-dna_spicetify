@@ -204,6 +204,27 @@
     return s;
   }
 
+  // Muestra de una distribución Beta(a, b) con a, b ENTEROS ≥ 1 (aciertos + 1, fallos + 1).
+  // Truco del «estadístico de orden»: tira a + b − 1 números al azar en [0, 1), ordénalos y coge el a-ésimo.
+  // Sale exactamente Beta(a, b) y no hace falta ninguna librería de estadística.
+  function betaSample(a, b, rng) {
+    const u = Array.from({ length: a + b - 1 }, rng).sort((x, y) => x - y); // sort numérico (sin él, ordenaría como texto)
+    return u[a - 1];
+  }
+
+  // Generador de números «aleatorios» con semilla (mulberry32): la misma semilla da siempre la misma secuencia.
+  // Sirve para que una simulación dé el mismo resultado cada vez (tests y frases estables en pantalla).
+  function seededRng(seed) {
+    let s = seed >>> 0;
+    return () => {
+      s = (s + 0x6d2b79f5) >>> 0;
+      let t = s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296; // 2^32: pasa de entero a [0, 1)
+    };
+  }
+
   // ε-greedy: cada hueco tira el dado (rng). Hueco 1 = «la apuesta» (siempre greedy). En los demás,
   // con probabilidad ε se elige una fuente disponible al azar; si no, la de mayor valor.
   function pickBatch(pools, stats, rng, n = CONST.BATCH) {
@@ -374,7 +395,7 @@
 
   const core = { imageUrl, fetchFavorites, fetchSimilarGroups, readLiData, parseStore, addTrial, serializeStore, CONST, SOURCES, LABEL, classify, trackRecords, dayKey, artistName, affinityMap, seeds, antitaste,
     historyCandidates, favoriteCandidates, similarCandidates, playCounts,
-    resolveTrial, excludedUris, armStats, pickBatch, banditSentence };
+    resolveTrial, excludedUris, armStats, pickBatch, banditSentence, betaSample, seededRng };
   if (typeof module !== "undefined" && module.exports) module.exports = core;
   if (typeof Spicetify === "undefined") return; // en Node (tests) termina aquí
 

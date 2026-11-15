@@ -109,3 +109,21 @@ test("guardar (like) es acierto al instante, aunque luego se salte o no suene", 
   assert.equal(core.resolveTrial(like("l", 7 * 60), [], now), "hit");
   assert.equal(core.armStats([like("l", 1)], [], now).historial.hits, 1);
 });
+
+test("betaSample: estadístico de orden con rng controlado", () => {
+  const seq = [0.9, 0.2, 0.5];
+  let i = 0; // a=2, b=2 → 3 uniformes ordenadas [0.2, 0.5, 0.9] → la 2.ª
+  assert.equal(core.betaSample(2, 2, () => seq[i++]), 0.5);
+});
+
+test("betaSample: media de Beta(3,1) ≈ 0,75 y Beta(1,5) baja, sin NaN", () => {
+  const rng = core.seededRng(42);
+  const mean = (a, b) => { let s = 0; for (let k = 0; k < 4000; k++) s += core.betaSample(a, b, rng); return s / 4000; };
+  assert.ok(Math.abs(mean(3, 1) - 0.75) < 0.02);
+  assert.ok(Math.abs(mean(1, 5) - 1 / 6) < 0.02);
+});
+
+test("seededRng: misma semilla, misma secuencia, en [0,1)", () => {
+  const a = core.seededRng(7), b = core.seededRng(7);
+  for (let k = 0; k < 5; k++) { const x = a(); assert.equal(x, b()); assert.ok(x >= 0 && x < 1); }
+});
