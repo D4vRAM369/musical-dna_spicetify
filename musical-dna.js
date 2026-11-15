@@ -27,6 +27,7 @@
     SIMS: 1000, // sorteos de Monte Carlo para «mejor fuente con un N % de probabilidad»
     SEED: 2026, // semilla fija de esas simulaciones: misma frase con los mismos datos
     BATCH: 10, // sugerencias por tanda
+    MAX_PER_ARTIST: 2, // variedad: como mucho 2 canciones del mismo artista en una tanda
     ATTR_WINDOW_MS: 6 * H, // una prueba se resuelve con la primera escucha en las 6 h siguientes
     MAX_TRIALS: 2000,
     FAV_LIMIT: 500,
@@ -240,6 +241,11 @@
   function pickBatch(pools, stats, rng, n = CONST.BATCH) {
     const next = Object.fromEntries(SOURCES.map((s) => [s, 0])); // siguiente candidato de cada fuente
     const used = new Set();
+    // Variedad: cuántas canciones lleva cada artista en ESTA tanda. Clave = artistUri, o el nombre si no hay URI;
+    // un artista desconocido («—») no se cuenta (no sabemos si son el mismo).
+    const perArtist = new Map();
+    const artistKey = (t) => t.artistUri ?? (t.artist && t.artist !== "—" ? t.artist : null);
+    const full = (t) => artistKey(t) != null && (perArtist.get(artistKey(t)) ?? 0) >= CONST.MAX_PER_ARTIST;
     const out = [];
     const value = (s) => stats[s]?.value ?? 0.5;
     const picks = Object.fromEntries(SOURCES.map((s) => [s, 0])); // cuántas veces sale cada fuente en ESTA tanda
@@ -261,14 +267,15 @@
       return avail.reduce((b, s) => (d[s] > d[b] ? s : b));
     };
     while (out.length < n) {
-      // Disponible = le quedan candidatos no usados (salta duplicados entre fuentes).
-      for (const s of SOURCES) while (pools[s]?.[next[s]] && used.has(pools[s][next[s]].uri)) next[s] += 1;
+      // Disponible = le quedan candidatos válidos: salta duplicados entre fuentes y artistas que ya llenaron su cupo.
+      for (const s of SOURCES) while (pools[s]?.[next[s]] && (used.has(pools[s][next[s]].uri) || full(pools[s][next[s]]))) next[s] += 1;
       const avail = SOURCES.filter((s) => pools[s]?.[next[s]]);
       if (!avail.length) break;
       const src = out.length === 0 ? greedy(avail) : thompson(avail);
       picks[src] += 1;
       const pick = pools[src][next[src]++];
       used.add(pick.uri);
+      if (artistKey(pick) != null) perArtist.set(artistKey(pick), (perArtist.get(artistKey(pick)) ?? 0) + 1);
       out.push({ ...pick, bet: out.length === 0 });
     }
     return out;

@@ -158,3 +158,21 @@ test("betaSample con muchas pruebas: rápido, en [0,1] y con la media correcta",
   assert.ok(Math.abs(s / 3000 - 0.75) < 0.005);
   assert.ok(Date.now() - t < 200, "lento: " + (Date.now() - t) + " ms");
 });
+
+test("variedad: como mucho 2 canciones por artista en la tanda; se salta al siguiente candidato", () => {
+  const by = (uri, artistUri, source = "similares") => ({ ...c(uri, source), artistUri });
+  const pools = {
+    historial: [],
+    favoritas: [],
+    similares: [by("m1", "a:manz"), by("m2", "a:manz"), by("m3", "a:manz"), by("k1", "a:cama"), by("m4", "a:manz")],
+  };
+  const b = core.pickBatch(pools, core.armStats([], [], now), () => 0.99, 10);
+  assert.deepEqual(b.map((x) => x.uri), ["m1", "m2", "k1"]); // m3 y m4 se saltan: Manzanita ya salió 2 veces
+  assert.equal(core.CONST.MAX_PER_ARTIST, 2);
+});
+
+test("variedad: sin artistUri se usa el nombre; «—» (desconocido) no cuenta como artista", () => {
+  const anon = (uri, artist) => ({ ...c(uri), artistUri: null, artist });
+  const pools = { historial: [anon("x1", "Fito"), anon("x2", "Fito"), anon("x3", "Fito"), anon("y1", "—"), anon("y2", "—"), anon("y3", "—")], favoritas: [], similares: [] };
+  assert.deepEqual(core.pickBatch(pools, core.armStats([], [], now), () => 0.99, 10).map((x) => x.uri), ["x1", "x2", "y1", "y2", "y3"]);
+});
