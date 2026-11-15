@@ -503,6 +503,32 @@
   // ─────────────────────────── SPOTIFY: interfaz ───────────────────────────
 
   // Icono: doble hélice. Glifo sólido, currentColor (toma el color del tema), viewBox 24.
+  // Estilo espacial (D-010): UNA etiqueta <style> con prefijo .mdna- para no chocar con Spotify.
+  // Excepción acotada a «solo colores del tema»: la nebulosa usa morado/azul fijos MUY transparentes;
+  // texto, botones y acentos siguen con var(--spice-*).
+  const SPACE_CSS = `
+.mdna-root{position:relative;overflow:hidden;border-radius:8px;
+  background:radial-gradient(ellipse at 20% 0%,rgba(110,60,200,.28),transparent 55%),
+             radial-gradient(ellipse at 90% 100%,rgba(30,110,170,.22),transparent 50%)}
+.mdna-stars{position:absolute;left:0;right:0;top:0;bottom:-200px;pointer-events:none;z-index:0;opacity:.8;
+  background-image:radial-gradient(1px 1px at 10% 20%,#fff9 50%,transparent 51%),radial-gradient(1px 1px at 70% 10%,#fff9 50%,transparent 51%),
+    radial-gradient(1.5px 1.5px at 40% 60%,#fffa 50%,transparent 51%),radial-gradient(1px 1px at 85% 45%,#fff8 50%,transparent 51%),
+    radial-gradient(1px 1px at 25% 85%,#fff8 50%,transparent 51%),radial-gradient(1.5px 1.5px at 60% 90%,#fff9 50%,transparent 51%);
+  background-size:200px 200px;animation:mdna-drift 40s linear infinite}
+.mdna-root>*:not(.mdna-stars):not(style){position:relative;z-index:1}
+.mdna-sys{position:relative;height:200px;margin:4px 0 0}
+.mdna-ring{position:absolute;left:50%;top:50%;border:1px dashed rgba(255,255,255,.14);border-radius:50%}
+.mdna-sun{position:absolute;left:50%;top:50%;width:30px;height:30px;margin:-15px;border-radius:50%;display:grid;place-items:center;
+  font-size:9px;font-weight:800;color:#4a2a00;background:radial-gradient(circle,#ffe9a8,#f2a33a);box-shadow:0 0 26px rgba(242,163,58,.6)}
+.mdna-orbit{position:absolute;left:50%;top:50%;width:0;height:0;animation:mdna-orbit linear infinite}
+.mdna-planet{position:absolute;transform:translate(-50%,-50%);border-radius:50%}
+.mdna-tag{position:absolute;transform:translate(-50%,12px);font-size:10px;color:var(--spice-subtext);white-space:nowrap}
+.mdna-row{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07)}
+.mdna-bet{background:var(--spice-card);box-shadow:0 0 0 1px var(--spice-button),0 0 18px -6px var(--spice-button)}
+@keyframes mdna-orbit{from{transform:rotate(0) translateX(var(--r)) rotate(0)}to{transform:rotate(360deg) translateX(var(--r)) rotate(-360deg)}}
+@keyframes mdna-drift{from{transform:translateY(0)}to{transform:translateY(-200px)}}
+@media (prefers-reduced-motion:reduce){.mdna-orbit,.mdna-stars{animation:none}}`;
+
   const ICON_SVG =
     '<svg role="img" height="18" width="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">' +
     '<path d="M7 3c0 6 10 6 10 12s-10 6-10 6"/><path d="M17 3c0 6-10 6-10 12"/><path d="M9 7h6M9 17h6"/></svg>';
@@ -607,7 +633,11 @@
       const actions = el("div", null, "display:flex;gap:8px");
       actions.append(exp, wipe);
       foot.append(info, actions);
-      root.append(header, body, foot);
+      root.className = "mdna-root";
+      const css = el("style", SPACE_CSS);
+      const stars = el("div");
+      stars.className = "mdna-stars";
+      root.append(css, stars, header, body, foot);
 
       function exportStore() {
         const text = serializeStore(store);
@@ -710,7 +740,8 @@
       }
 
       function row(c, stats, big) {
-        const r = el("div", null, `display:flex;align-items:center;gap:12px;padding:8px;border-radius:6px;${big ? "background:var(--spice-card)" : ""}`);
+        const r = el("div", null, "display:flex;align-items:center;gap:12px;padding:8px;border-radius:6px;margin-bottom:4px");
+        r.className = big ? "mdna-bet" : "mdna-row";
         const text = el("div", null, "display:flex;flex-direction:column;gap:2px;min-width:0;flex:1");
         if (big) text.append(el("div", "La apuesta del bandido", LABEL_H + ";margin-top:0"));
         const s = stats[c.source];
@@ -760,11 +791,47 @@
         setTimeout(render, 0);
       }
 
+      // Sistema solar del bandido (D-010): tú eres el sol; cada fuente, un planeta. Tamaño y brillo = probabilidad
+      // de ser la mejor (probBest). Fuente no disponible: gris y «sin datos». Las órbitas arrancan en
+      // animation-delay NEGATIVO según la hora: al redibujar tras un clic, cada planeta sigue donde iba.
+      function solarSystem(stats, available, now) {
+        const ORBITS = [[42, 22], [66, 34], [90, 50]]; // [radio px, segundos por vuelta] por fuente, en orden SOURCES (caben en 200 px)
+        const COLORS = { historial: "#f2c14e", favoritas: "var(--spice-button)", similares: "#7b9cff" };
+        const p = available.length ? probBest(stats, available) : {};
+        const sys = el("div");
+        sys.className = "mdna-sys";
+        for (const [r] of ORBITS) {
+          const ring = el("div", null, `width:${2 * r}px;height:${2 * r}px;margin:-${r}px`);
+          ring.className = "mdna-ring";
+          sys.append(ring);
+        }
+        const sun = el("div", "TÚ");
+        sun.className = "mdna-sun";
+        sys.append(sun);
+        SOURCES.forEach((s, i) => {
+          const [r, secs] = ORBITS[i];
+          const on = s in p;
+          const size = on ? Math.round(10 + 18 * p[s]) : 10;
+          const orbit = el("div", null, `--r:${r}px;animation-duration:${secs}s;animation-delay:-${now % (secs * 1000)}ms`);
+          orbit.className = "mdna-orbit";
+          const color = on ? COLORS[s] : "#555";
+          const planet = el("div", null, `width:${size}px;height:${size}px;background:${color};${on ? `box-shadow:0 0 ${size / 2}px ${color}` : ""}`);
+          planet.className = "mdna-planet";
+          const tag = el("div", on ? `${LABEL[s]} ${Math.round(p[s] * 100)} %` : `${LABEL[s]} · sin datos`);
+          tag.className = "mdna-tag";
+          orbit.append(planet, tag);
+          sys.append(orbit);
+        });
+        const wrap = el("div", null, "display:flex;flex-direction:column;gap:4px");
+        wrap.append(sys, el("div", banditSentence(stats, available), SUB + ";text-align:center;font-size:12px"));
+        return wrap;
+      }
+
       function renderForYou(now) {
         if (!session.batch) makeBatch(null, now); // primera apertura de la sesión
         const { items, why } = session.batch;
         const stats = armStats(store.trials, data.li.records, now);
-        const out = [];
+        const out = [solarSystem(stats, session.batch.available, now)];
         if (!items.length) out.push(el("div", "Ahora mismo no hay nada que sugerirte:", "font-weight:700"));
         items.forEach((c, i) => {
           if (c.wave > 1 && items[i - 1]?.wave !== c.wave) out.push(el("div", `✦ Tanda ${c.wave} ✦`, LABEL_H + ";text-align:center"));

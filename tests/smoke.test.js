@@ -263,3 +263,30 @@ test("sin IntersectionObserver el panel funciona (sin carga automática)", async
   assert.match(textOf(root), /La apuesta del bandido/);
   assert.equal(new Set(filas(root)).size, 10);
 });
+
+const all = (n, pred) => [...(pred(n) ? [n] : []), ...n.children.flatMap((c) => all(c, pred))];
+
+test("Para ti muestra el sistema solar: % por fuente disponible y gris «sin datos» para la caída", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5), r("b", 6)])), liked: [likedItem(1)] });
+  const root = await open(env);
+  const t = textOf(root);
+  assert.match(t, /TÚ/);
+  assert.match(t, /Historial \d+ %/);
+  assert.match(t, /Similares · sin datos/); // GraphQL caído en el boot
+  assert.doesNotMatch(t, /NaN/);
+});
+
+test("las órbitas continúan tras redibujar (animation-delay negativo)", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5)])) });
+  const root = await open(env);
+  const planets = all(root, (n) => /mdna-orbit/.test(n.className ?? ""));
+  assert.equal(planets.length, 3);
+  for (const p of planets) assert.match(p.style.cssText, /animation-delay:-\d+ms/);
+});
+
+test("una sola etiqueta <style> aunque se redibuje y se cambie de pestaña", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5)])) });
+  const root = await open(env);
+  for (const tab of ["Tu ADN", "Cómo aprende", "Para ti"]) click(root, findButton(root, tab));
+  assert.equal(all(root, (n) => n.tag === "style").length, 1);
+});
