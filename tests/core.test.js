@@ -27,7 +27,8 @@ test("dayKey usa la fecha local", () => {
 });
 
 test("CONST expone los valores del spec", () => {
-  assert.equal(core.CONST.EPSILON, 0.2);
+  assert.equal(core.CONST.SIMS, 1000);
+  assert.equal(core.CONST.SEED, 2026);
   assert.equal(core.CONST.BATCH, 10);
   assert.equal(core.CONST.STORE_KEY, "musical-dna:v1");
 });

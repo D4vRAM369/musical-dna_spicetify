@@ -24,7 +24,8 @@
     SEEDS_SHOWN: 10,
     SKIP_MIN: 3, // antigusto: al menos 3 saltos y ninguna válida (mismo criterio que LI)
     RECENT_EXCLUDE_MS: 72 * H, // no sugerir lo que sonó hace menos de 72 h
-    EPSILON: 0.2, // el bandido explora el 20 % de las veces
+    SIMS: 1000, // sorteos de Monte Carlo para «mejor fuente con un N % de probabilidad»
+    SEED: 2026, // semilla fija de esas simulaciones: misma frase con los mismos datos
     BATCH: 10, // sugerencias por tanda
     ATTR_WINDOW_MS: 6 * H, // una prueba se resuelve con la primera escucha en las 6 h siguientes
     MAX_TRIALS: 2000,
@@ -207,7 +208,15 @@
   // Muestra de una distribución Beta(a, b) con a, b ENTEROS ≥ 1 (aciertos + 1, fallos + 1).
   // Truco del «estadístico de orden»: tira a + b − 1 números al azar en [0, 1), ordénalos y coge el a-ésimo.
   // Sale exactamente Beta(a, b) y no hace falta ninguna librería de estadística.
+  // Con muchas pruebas (a + b > 60) ordenar miles de números por sorteo es lento; ahí la campana Beta ya es
+  // casi idéntica a una normal con su misma media y varianza, así que se usa esa (Box-Muller, 2 números al azar).
   function betaSample(a, b, rng) {
+    if (a + b > 60) {
+      const n = a + b;
+      const sd = Math.sqrt((a * b) / (n * n * (n + 1))); // desviación típica de Beta(a, b)
+      const z = Math.sqrt(-2 * Math.log(1 - rng())) * Math.cos(2 * Math.PI * rng()); // normal estándar (Box-Muller)
+      return Math.min(1, Math.max(0, a / n + sd * z)); // recortada a [0, 1]: es una proporción
+    }
     const u = Array.from({ length: a + b - 1 }, rng).sort((x, y) => x - y); // sort numérico (sin él, ordenaría como texto)
     return u[a - 1];
   }
@@ -265,6 +274,24 @@
     return out;
   }
 
+  // ¿Con qué probabilidad es cada fuente la mejor? Método de Monte Carlo: repetir el sorteo de Thompson
+  // CONST.SIMS veces y contar cuántas gana cada una. Semilla fija → mismo resultado con los mismos datos
+  // (la frase de «Cómo aprende» no cambia en cada redibujado).
+  function probBest(stats, available) {
+    const rng = seededRng(CONST.SEED);
+    const wins = Object.fromEntries(available.map((s) => [s, 0]));
+    for (let k = 0; k < CONST.SIMS; k++) {
+      let top = null, topDraw = -1;
+      for (const s of available) {
+        const hits = stats[s]?.hits ?? 0;
+        const d = betaSample(hits + 1, (stats[s]?.trials ?? 0) - hits + 1, rng);
+        if (d > topDraw) (top = s), (topDraw = d);
+      }
+      wins[top] += 1;
+    }
+    return Object.fromEntries(available.map((s) => [s, wins[s] / CONST.SIMS]));
+  }
+
   function banditSentence(stats, available) {
     if (!available.length) return "Sin fuentes disponibles";
     const untried = available.filter((s) => stats[s]?.trials === 0);
@@ -274,8 +301,8 @@
       return `Primero probaré ${list} (aún sin pruebas); después apostaré por la que más acierte`;
     }
     const best = available.reduce((b, s) => ((stats[s]?.value ?? 0.5) > (stats[b]?.value ?? 0.5) ? s : b));
-    const pct = Math.round(CONST.EPSILON * 100);
-    return `Ahora apostaría por ${LABEL[best]} (${100 - pct} % de las veces) y exploraría el ${pct} %`;
+    const pct = Math.round(probBest(stats, available)[best] * 100);
+    return `Ahora apostaría por ${LABEL[best]}: es tu mejor fuente con un ${pct} % de probabilidad`;
   }
 
   // ── Almacén propio (diseño §5.6): solo las pruebas; todo lo demás se recalcula ──
@@ -406,7 +433,7 @@
 
   const core = { imageUrl, fetchFavorites, fetchSimilarGroups, readLiData, parseStore, addTrial, serializeStore, CONST, SOURCES, LABEL, classify, trackRecords, dayKey, artistName, affinityMap, seeds, antitaste,
     historyCandidates, favoriteCandidates, similarCandidates, playCounts,
-    resolveTrial, excludedUris, armStats, pickBatch, banditSentence, betaSample, seededRng };
+    resolveTrial, excludedUris, armStats, pickBatch, banditSentence, betaSample, seededRng, probBest };
   if (typeof module !== "undefined" && module.exports) module.exports = core;
   if (typeof Spicetify === "undefined") return; // en Node (tests) termina aquí
 

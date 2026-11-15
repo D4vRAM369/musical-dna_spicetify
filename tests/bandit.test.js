@@ -91,9 +91,18 @@ test("pickBatch sin brazos devuelve []", () => {
   assert.deepEqual(core.pickBatch({ historial: [], favoritas: [], similares: [] }, {}, Math.random), []);
 });
 
-test("banditSentence", () => {
-  const s = { historial: { value: 0.7 }, favoritas: { value: 0.5 }, similares: { value: 0.5 } };
-  assert.equal(core.banditSentence(s, ["historial", "favoritas"]), "Ahora apostaría por Historial (80 % de las veces) y exploraría el 20 %");
+test("probBest: una sola fuente = 100 %; solo cuenta las disponibles", () => {
+  assert.deepEqual(core.probBest({ historial: { trials: 3, hits: 1 } }, ["historial"]), { historial: 1 });
+  const p = core.probBest({ historial: { trials: 50, hits: 45 }, favoritas: { trials: 50, hits: 5 }, similares: { trials: 9, hits: 9 } }, ["historial", "favoritas"]);
+  assert.deepEqual(Object.keys(p).sort(), ["favoritas", "historial"]);
+  assert.ok(p.historial > 0.99);
+});
+
+test("banditSentence: probabilidad estable", () => {
+  const s = { historial: { trials: 10, hits: 7, value: 8 / 12 }, favoritas: { trials: 10, hits: 3, value: 4 / 12 }, similares: { trials: 5, hits: 2, value: 3 / 7 } };
+  const a = core.banditSentence(s, ["historial", "favoritas"]);
+  assert.match(a, /^Ahora apostaría por Historial: es tu mejor fuente con un \d+ % de probabilidad$/);
+  assert.equal(a, core.banditSentence(s, ["historial", "favoritas"]));
   assert.equal(core.banditSentence(s, []), "Sin fuentes disponibles");
 });
 
@@ -139,4 +148,13 @@ test("betaSample: media de Beta(3,1) ≈ 0,75 y Beta(1,5) baja, sin NaN", () => 
 test("seededRng: misma semilla, misma secuencia, en [0,1)", () => {
   const a = core.seededRng(7), b = core.seededRng(7);
   for (let k = 0; k < 5; k++) { const x = a(); assert.equal(x, b()); assert.ok(x >= 0 && x < 1); }
+});
+
+test("betaSample con muchas pruebas: rápido, en [0,1] y con la media correcta", () => {
+  const rng = core.seededRng(3);
+  const t = Date.now();
+  let s = 0;
+  for (let k = 0; k < 3000; k++) { const x = core.betaSample(1500, 500, rng); assert.ok(x >= 0 && x <= 1); s += x; }
+  assert.ok(Math.abs(s / 3000 - 0.75) < 0.005);
+  assert.ok(Date.now() - t < 200, "lento: " + (Date.now() - t) + " ms");
 });
