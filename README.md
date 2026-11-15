@@ -23,7 +23,7 @@ Inspirado en el sistema de recomendaciones de Spotify (*bandidos multibrazo*; Mc
 1. Hay tres fuentes: **tu historial** (lo que te gusta y hace días que no suena), **tus favoritas** (las guardadas que menos pones) y **similares** (canciones top de artistas relacionados con tus semillas).
 2. Cuando pulsas ▶ o ＋, se anota la prueba.
 3. Si Listening Intelligence registra esa canción en las 6 h siguientes y la escuchas ≥30 s, la fuente suma un acierto; si la saltas, un fallo.
-4. El 80 % de las veces se apuesta por la fuente que más acierta; el 20 %, se explora otra.
+4. Al principio prueba cada fuente; después, el 80 % de las veces apuesta por la que más acierta y el 20 % explora otra.
 
 Nunca te sugiere lo que sonó en las últimas 72 h ni lo que siempre saltas.
 
