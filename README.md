@@ -25,7 +25,10 @@ Inspirado en el sistema de recomendaciones de Spotify (*bandidos multibrazo*; Mc
 3. ＋ guarda la canción en «Canciones que te gustan» (pasa a ✓) y cuenta como acierto al momento; quitar el ✓ lo deshace.
 4. Arriba va «la apuesta»: la fuente que más acierta. El resto se reparte con *Thompson sampling*: cuanto menos sabe de una fuente, más la prueba; cuanto más sabe, más apuesta por la que acierta. «Cómo aprende» te dice con qué probabilidad cree que cada fuente es la mejor.
 
-Nunca te sugiere lo que sonó en las últimas 72 h ni lo que siempre saltas.
+5. «Para ti» abre con **tu sistema solar**: tú eres el sol y cada fuente un planeta, más grande y brillante cuanto más probable es que sea la mejor. Al bajar por la lista se cargan solas más sugerencias, tanda a tanda, hasta que no quedan más.
+6. ✗ descarta una sugerencia para siempre y cuenta como fallo de su fuente.
+
+Nunca te sugiere lo que sonó en las últimas 72 h, lo que siempre saltas ni lo que descartaste.
 
 ## Privacidad
 
