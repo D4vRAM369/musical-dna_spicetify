@@ -83,3 +83,21 @@ test("banditSentence", () => {
   assert.equal(core.banditSentence(s, ["historial", "favoritas"]), "Ahora apostaría por Historial (80 % de las veces) y exploraría el 20 %");
   assert.equal(core.banditSentence(s, []), "Sin fuentes disponibles");
 });
+
+test("arranque en frío: con todas sin pruebas, la tanda rota entre fuentes", () => {
+  const pools = { historial: [c("h1"), c("h2")], favoritas: [c("f1", "favoritas"), c("f2", "favoritas")], similares: [c("s1", "similares"), c("s2", "similares")] };
+  const b = core.pickBatch(pools, core.armStats([], [], now), () => 0.99, 6);
+  assert.deepEqual(b.map((x) => x.uri), ["h1", "f1", "s1", "h2", "f2", "s2"]);
+});
+
+test("una fuente sin pruebas se prueba primero; después manda el valor", () => {
+  const pools = { historial: [c("h1"), c("h2")], favoritas: [c("f1", "favoritas"), c("f2", "favoritas")], similares: [c("s1", "similares")] };
+  const stats = { historial: { trials: 2, value: 0.9 }, favoritas: { trials: 0, value: 0.5 }, similares: { trials: 3, value: 0.2 } };
+  assert.deepEqual(core.pickBatch(pools, stats, () => 0.99, 3).map((x) => x.uri), ["f1", "h1", "h2"]);
+});
+
+test("banditSentence avisa de las fuentes sin probar", () => {
+  const s = { historial: { trials: 2, value: 0.7 }, favoritas: { trials: 0, value: 0.5 }, similares: { trials: 0, value: 0.5 } };
+  assert.equal(core.banditSentence(s, ["historial", "favoritas", "similares"]),
+    "Primero probaré Favoritas y Similares (aún sin pruebas); después apostaré por la que más acierte");
+});

@@ -122,7 +122,7 @@ test("Cómo aprende muestra la frase del bandido y las pruebas", async () => {
   click(root, findButton(root, "▶"));
   click(root, findButton(root, "Cómo aprende"));
   const t = textOf(root);
-  assert.match(t, /Ahora apostaría por/);
+  assert.match(t, /Primero probaré .*\(aún sin pruebas\)/); // la prueba pendiente aún no cuenta (D-005)
   assert.match(t, /⏳/);
 });
 

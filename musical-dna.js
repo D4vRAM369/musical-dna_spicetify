@@ -209,6 +209,12 @@
     const used = new Set();
     const out = [];
     const value = (s) => stats[s]?.value ?? 0.5;
+    const picks = Object.fromEntries(SOURCES.map((s) => [s, 0])); // cuántas veces sale cada fuente en ESTA tanda
+    // Arranque en frío (D-005): una fuente con 0 pruebas sale una vez antes que nadie, y en empate de valor
+    // gana la que menos ha salido en la tanda. Así, sin datos, la tanda rota entre fuentes en vez de repetir una.
+    const greedy = (avail) =>
+      avail.find((s) => stats[s]?.trials === 0 && picks[s] === 0) ??
+      avail.reduce((best, s) => (value(s) > value(best) || (value(s) === value(best) && picks[s] < picks[best]) ? s : best));
     while (out.length < n) {
       // Disponible = le quedan candidatos no usados (salta duplicados entre fuentes).
       for (const s of SOURCES) while (pools[s]?.[next[s]] && used.has(pools[s][next[s]].uri)) next[s] += 1;
@@ -216,9 +222,8 @@
       if (!avail.length) break;
       const roll = rng();
       const explore = out.length > 0 && roll < CONST.EPSILON;
-      const src = explore
-        ? avail[Math.floor(rng() * avail.length)]
-        : avail.reduce((best, s) => (value(s) > value(best) ? s : best)); // reduce conserva el primero en empate
+      const src = explore ? avail[Math.floor(rng() * avail.length)] : greedy(avail);
+      picks[src] += 1;
       const pick = pools[src][next[src]++];
       used.add(pick.uri);
       out.push({ ...pick, bet: out.length === 0 });
@@ -228,6 +233,12 @@
 
   function banditSentence(stats, available) {
     if (!available.length) return "Sin fuentes disponibles";
+    const untried = available.filter((s) => stats[s]?.trials === 0);
+    if (untried.length) {
+      const names = untried.map((s) => LABEL[s]);
+      const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} y ${names.at(-1)}` : names[0];
+      return `Primero probaré ${list} (aún sin pruebas); después apostaré por la que más acierte`;
+    }
     const best = available.reduce((b, s) => ((stats[s]?.value ?? 0.5) > (stats[b]?.value ?? 0.5) ? s : b));
     const pct = Math.round(CONST.EPSILON * 100);
     return `Ahora apostaría por ${LABEL[best]} (${100 - pct} % de las veces) y exploraría el ${pct} %`;
