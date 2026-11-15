@@ -28,7 +28,7 @@ const tick = async (k = 10) => { for (let i = 0; i < k; i++) await new Promise((
 const LI = (records) => ({ "listening-intelligence": { meta: { meta: { schemaVersion: 1, observingSince: now - 30 * 864e5 } }, records } });
 const likedItem = (i) => ({ uri: "spotify:track:fav" + i, name: "Fav" + i, album: { artist: { uri: "spotify:artist:f" + i, name: "F" + i }, images: [] } });
 
-async function boot({ idb, disk = {}, liked = [], gqlFails = true } = {}) {
+async function boot({ idb, disk = {}, liked = [], gqlFails = true, addFails = false } = {}) {
   const L = { notes: [] };
   class FakeDate extends Date {
     constructor(...a) { super(...(a.length ? a : [now])); }
@@ -39,11 +39,14 @@ async function boot({ idb, disk = {}, liked = [], gqlFails = true } = {}) {
     showNotification: (msg, isError) => L.notes.push({ msg, isError: !!isError }),
     LocalStorage: { get: (k) => (k in disk ? disk[k] : null), set: (k, v) => (disk[k] = String(v)), remove: (k) => delete disk[k] },
     Platform: {
-      LibraryAPI: { getTracks: async ({ offset }) => ({ items: offset === 0 ? liked : [], totalLength: 0 }) },
+      LibraryAPI: {
+        getTracks: async ({ offset }) => ({ items: offset === 0 ? liked : [], totalLength: 0 }),
+        add: async (o) => { if (addFails) throw new Error("caído"); L.added = o; },
+        remove: async (o) => (L.removed = o),
+      },
       ClipboardAPI: { copy: (t) => (L.copied = t) },
     },
     GraphQL: { Definitions: { queryArtistRelated: 1, queryArtistOverview: 2 }, Request: async () => { if (gqlFails) throw new Error("caído"); } },
-    addToQueue: async (items) => (L.queued = items),
     Topbar: { Button: class { constructor(label, icon, onClick) { L.topbarClick = onClick; } } },
     PopupModal: { display: (o) => (L.modal = o) },
   };
@@ -97,13 +100,35 @@ test("▶ guarda la prueba, reproduce y el modal sigue abierto (Error #6)", asyn
   assert.equal(env.L.played, "a");
 });
 
-test("＋ añade a la cola y anota la prueba", async () => {
+test("＋ guarda en Canciones que te gustan, pasa a ✓ y ✓ la quita", async () => {
   const env = await boot({ idb: fakeIDB(LI([r("a", 5)])) });
   const root = await open(env);
   assert.ok(click(root, findButton(root, "＋")));
   await tick();
-  assert.equal(JSON.stringify(env.L.queued), JSON.stringify([{ uri: "a" }])); // el array viene de otro contexto vm
-  assert.equal(JSON.parse(env.disk["musical-dna:v1"]).trials[0].action, "queue");
+  assert.equal(JSON.stringify(env.L.added), JSON.stringify({ uris: ["a"] })); // el objeto viene de otro contexto vm
+  assert.equal(JSON.parse(env.disk["musical-dna:v1"]).trials[0].action, "like");
+  assert.ok(findButton(root, "✓"), "el ＋ se convierte en ✓");
+  assert.ok(click(root, findButton(root, "✓")));
+  await tick();
+  assert.equal(JSON.stringify(env.L.removed), JSON.stringify({ uris: ["a"] }));
+  assert.ok(findButton(root, "＋"), "vuelve a ＋");
+  assert.equal(JSON.parse(env.disk["musical-dna:v1"]).trials.length, 0); // quitar deshace el acierto del like
+});
+
+test("una favorita ya guardada se muestra con ✓", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 0)])), liked: [likedItem(1)] });
+  const root = await open(env);
+  assert.ok(findButton(root, "✓"));
+});
+
+test("si Spotify falla al guardar, el ✓ se deshace y avisa", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5)])), addFails: true });
+  const root = await open(env);
+  click(root, findButton(root, "＋"));
+  await tick();
+  assert.ok(findButton(root, "＋"));
+  assert.ok(env.L.notes.some((n) => n.isError && /biblioteca/.test(n.msg)));
+  assert.equal(JSON.parse(env.disk["musical-dna:v1"]).trials.length, 0); // sin guardar no hay acierto
 });
 
 test("pestañas, chips y Nuevas sugerencias no salen del DOM al pulsarlos (Error #6)", async () => {

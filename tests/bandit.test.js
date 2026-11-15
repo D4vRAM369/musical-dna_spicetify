@@ -101,3 +101,11 @@ test("banditSentence avisa de las fuentes sin probar", () => {
   assert.equal(core.banditSentence(s, ["historial", "favoritas", "similares"]),
     "Primero probaré Favoritas y Similares (aún sin pruebas); después apostaré por la que más acierte");
 });
+
+test("guardar (like) es acierto al instante, aunque luego se salte o no suene", () => {
+  const like = (uri, minsAgo) => ({ ...T(uri, minsAgo), action: "like" });
+  assert.equal(core.resolveTrial(like("l", 1), [], now), "hit");
+  assert.equal(core.resolveTrial(like("l", 60), [at(r("l", 0, 1000), 50)], now), "hit");
+  assert.equal(core.resolveTrial(like("l", 7 * 60), [], now), "hit");
+  assert.equal(core.armStats([like("l", 1)], [], now).historial.hits, 1);
+});

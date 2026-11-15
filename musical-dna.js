@@ -168,7 +168,9 @@
   const LABEL = { historial: "Historial", favoritas: "Favoritas", similares: "Similares" };
 
   // Una prueba (Brian pulsó ▶ o ＋) se resuelve con el PRIMER registro de esa canción en las 6 h siguientes.
+  // Excepción: guardar en «Canciones que te gustan» (action "like") es un acierto explícito, no hace falta escucharla.
   function resolveTrial(trial, records, now) {
+    if (trial.action === "like") return "hit";
     const end = trial.at + CONST.ATTR_WINDOW_MS;
     let first = null;
     for (const r of trackRecords(records))
@@ -380,7 +382,8 @@
 
   // Un solo estado por sesión de Spotify. La tanda se conserva entre aperturas del panel; solo
   // «Nuevas sugerencias» la regenera. Las respuestas de GraphQL se guardan en `gqlCache`.
-  const session = { batch: null, clicked: new Set(), gqlCache: new Map(), warned: false };
+  // `saved` = URIs que sabemos en «Canciones que te gustan» (se siembra con las favoritas leídas).
+  const session = { batch: null, clicked: new Set(), saved: new Set(), gqlCache: new Map(), warned: false };
 
   function loadStore() {
     const { state, warning } = parseStore(Spicetify.LocalStorage.get(CONST.STORE_KEY));
@@ -398,6 +401,7 @@
     if (li.status !== "ok") return { li };
     const now = Date.now();
     const fav = await fetchFavorites(Spicetify);
+    if (fav.ok) for (const t of fav.liked) session.saved.add(t.uri);
     const simSeeds = [
       ...seeds(li.records, "total", now).items.slice(0, 5),
       ...(fav.ok ? fav.liked.slice(0, 5) : []), // las 5 favoritas más recientes (orden de Spotify)
@@ -574,10 +578,47 @@
         store = addTrial(store, { uri: c.uri, source: c.source, why: c.why, at: Date.now(), action });
         saveStore(store);
         session.clicked.add(c.uri);
-        if (action === "play") Spicetify.Player.playUri(c.uri);
-        else Promise.resolve(Spicetify.addToQueue([{ uri: c.uri }])).catch((e) => console.warn(TAG, "addToQueue", e));
+        Spicetify.Player.playUri(c.uri);
         Spicetify.showNotification("Anotado: veremos si te gusta");
         setTimeout(render, 0); // redibujar DESPUÉS del clic: el botón pulsado sigue en el DOM mientras el clic sube (Error #6)
+      }
+
+      // ＋/✓ como el corazón nativo de Spotify: guarda o quita de «Canciones que te gustan».
+      // Optimista: el icono cambia al momento; si Spotify falla, se deshace y se avisa.
+      function toggleSaved(c) {
+        const api = Spicetify.Platform?.LibraryAPI;
+        const saving = !session.saved.has(c.uri);
+        const call = saving ? api?.add : api?.remove;
+        if (typeof call !== "function") return Spicetify.showNotification("Spotify no deja guardar canciones desde aquí", true);
+        const flip = (on) => (on ? session.saved.add(c.uri) : session.saved.delete(c.uri), setTimeout(render, 0)); // Error #6
+        flip(saving);
+        const before = store; // para deshacer la anotación si Spotify falla
+        if (saving && !store.trials.some((t) => t.action === "like" && t.uri === c.uri)) {
+          store = addTrial(store, { uri: c.uri, source: c.source, why: c.why, at: Date.now(), action: "like" });
+          saveStore(store);
+          session.clicked.add(c.uri);
+        } else if (!saving) {
+          // Quitar el ✓ deshace el acierto: un like arrepentido no debe seguir premiando a la fuente.
+          store = { ...store, trials: store.trials.filter((t) => !(t.action === "like" && t.uri === c.uri)) };
+          saveStore(store);
+        }
+        Promise.resolve()
+          .then(() => call.call(api, { uris: [c.uri] }))
+          .then(() => Spicetify.showNotification(saving ? "Añadida a Canciones que te gustan" : "Quitada de Canciones que te gustan"))
+          .catch((e) => {
+            console.warn(TAG, "LibraryAPI", e);
+            flip(!saving);
+            store = before;
+            saveStore(store);
+            Spicetify.showNotification("No se pudo actualizar tu biblioteca", true);
+          });
+      }
+
+      function saveButton(c) {
+        const on = session.saved.has(c.uri);
+        const b = button(on ? "✓" : "＋", (on ? ON : OFF) + ";width:32px;height:32px;padding:0", () => toggleSaved(c));
+        b.title = on ? "Quitar de Canciones que te gustan" : "Guardar en Canciones que te gustan";
+        return b;
       }
 
       function row(c, stats, big) {
@@ -593,7 +634,7 @@
         const btns = el("div", null, "display:flex;gap:6px;flex:none");
         btns.append(
           button("▶", ON + ";width:32px;height:32px;padding:0", () => tryIt(c, "play")),
-          button("＋", OFF + ";width:32px;height:32px;padding:0", () => tryIt(c, "queue")),
+          saveButton(c),
         );
         r.append(cover(c, big ? 64 : 40), text, btns);
         return r;
@@ -628,7 +669,7 @@
         const last = store.trials.slice(-10).reverse();
         if (!last.length) out.push(el("div", "Aún no has probado ninguna sugerencia: pulsa ▶ o ＋ en «Para ti».", SUB));
         for (const t of last) out.push(el("div", `${sym[resolveTrial(t, data.li.records, now)]} ${LABEL[t.source] ?? t.source} · ${t.why ?? t.uri}`, SUB + ";" + CUT));
-        out.push(el("div", "✓ escuchada ≥30 s · ✗ saltada · ⏳ esperando (6 h) · — no llegó a sonar", SUB + ";font-size:11px"));
+        out.push(el("div", "✓ escuchada ≥30 s o guardada · ✗ saltada · ⏳ esperando (6 h) · — no llegó a sonar", SUB + ";font-size:11px"));
         return out;
       }
 
