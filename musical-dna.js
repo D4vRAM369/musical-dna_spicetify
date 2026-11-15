@@ -507,7 +507,7 @@
   // Excepción acotada a «solo colores del tema»: la nebulosa usa morado/azul fijos MUY transparentes;
   // texto, botones y acentos siguen con var(--spice-*).
   const SPACE_CSS = `
-.mdna-root{position:relative;overflow:hidden;border-radius:8px;
+.mdna-root{position:relative;overflow:clip;border-radius:8px; /* clip, NO hidden: hidden crea un contenedor de scroll y la cabecera sticky dejaría de pegarse */
   background:radial-gradient(ellipse at 20% 0%,rgba(110,60,200,.28),transparent 55%),
              radial-gradient(ellipse at 90% 100%,rgba(30,110,170,.22),transparent 50%)}
 .mdna-stars{position:absolute;left:0;right:0;top:0;bottom:-200px;pointer-events:none;z-index:0;opacity:.8;
@@ -610,7 +610,7 @@
       const toolsRow = el("div", null, "display:flex;gap:8px;flex-wrap:wrap");
       tabsRow.append(...tabs);
       toolsRow.append(refresh, ...chips);
-      const header = el("div", null, "position:sticky;top:0;z-index:1;background:var(--spice-player);display:flex;flex-direction:column;gap:10px;padding-bottom:8px");
+      const header = el("div", null, "position:sticky;top:0;z-index:2;background:var(--spice-player);display:flex;flex-direction:column;gap:10px;padding-bottom:8px");
       header.append(tabsRow, toolsRow);
 
       const foot = el("div", null, "display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--spice-card);padding-top:12px");

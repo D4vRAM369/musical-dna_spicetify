@@ -290,3 +290,14 @@ test("una sola etiqueta <style> aunque se redibuje y se cambie de pestaña", asy
   for (const tab of ["Tu ADN", "Cómo aprende", "Para ti"]) click(root, findButton(root, tab));
   assert.equal(all(root, (n) => n.tag === "style").length, 1);
 });
+
+test("la cabecera sigue fija con el estilo espacial: root con overflow:clip y cabecera por encima de las filas", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5)])) });
+  const root = await open(env);
+  const css = all(root, (n) => n.tag === "style")[0].textContent;
+  const rootRule = css.match(/\.mdna-root\{[^}]*\}/)[0];
+  assert.match(rootRule, /overflow:clip/); // «hidden» crea un contenedor de scroll y rompe position:sticky
+  assert.doesNotMatch(rootRule, /overflow:hidden/);
+  const header = all(root, (n) => /position:sticky/.test(n.style.cssText ?? ""))[0];
+  assert.match(header.style.cssText, /z-index:2/); // body y pie tienen z-index:1: la cabecera debe pintarse encima
+});
