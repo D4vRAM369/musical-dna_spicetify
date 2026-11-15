@@ -239,7 +239,8 @@
   // Thompson sampling híbrido (D-007). Hueco 1 = «la apuesta»: la fuente de mayor media, sin azar.
   // Huecos 2+: cada fuente saca un número de su campana Beta(aciertos + 1, fallos + 1) y gana el mayor.
   // Campana ancha (pocas pruebas) → a veces saca mucho → se explora sola; campana estrecha y baja → casi nunca gana.
-  function pickBatch(pools, stats, rng, n = CONST.BATCH) {
+  // `bet: false` (tandas 2+ de la carga automática): sin «apuesta», el hueco 1 también se sortea con Thompson.
+  function pickBatch(pools, stats, rng, n = CONST.BATCH, { bet = true } = {}) {
     const next = Object.fromEntries(SOURCES.map((s) => [s, 0])); // siguiente candidato de cada fuente
     const used = new Set();
     // Variedad: cuántas canciones lleva cada artista en ESTA tanda. Clave = artistUri, o el nombre si no hay URI;
@@ -272,12 +273,12 @@
       for (const s of SOURCES) while (pools[s]?.[next[s]] && (used.has(pools[s][next[s]].uri) || full(pools[s][next[s]]))) next[s] += 1;
       const avail = SOURCES.filter((s) => pools[s]?.[next[s]]);
       if (!avail.length) break;
-      const src = out.length === 0 ? greedy(avail) : thompson(avail);
+      const src = bet && out.length === 0 ? greedy(avail) : thompson(avail);
       picks[src] += 1;
       const pick = pools[src][next[src]++];
       used.add(pick.uri);
       if (artistKey(pick) != null) perArtist.set(artistKey(pick), (perArtist.get(artistKey(pick)) ?? 0) + 1);
-      out.push({ ...pick, bet: out.length === 0 });
+      out.push({ ...pick, bet: bet && out.length === 0 });
     }
     return out;
   }

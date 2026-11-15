@@ -186,3 +186,14 @@ test("descartar (✗) es fallo al instante y excluye la canción para siempre", 
   const ex = core.excludedUris({ records: [], trials: [dis("old", 30 * 24 * 60)], lastBatch: [], now });
   assert.ok(ex.has("old")); // un mes después sigue excluida
 });
+
+test("pickBatch con bet:false: sin apuesta, el hueco 1 también se sortea", () => {
+  const pools = { historial: [c("h1")], favoritas: [c("f1", "favoritas")], similares: [] };
+  const stats = { historial: { trials: 5, hits: 3, value: 4 / 7 }, favoritas: { trials: 5, hits: 2, value: 3 / 7 }, similares: {} };
+  // Con apuesta, el hueco 1 es siempre la mayor media (historial). Sin apuesta se sortea: alguna vez gana favoritas.
+  assert.ok(core.pickBatch(pools, stats, Math.random, 1)[0].bet);
+  const rng = core.seededRng(5);
+  const firsts = Array.from({ length: 200 }, () => core.pickBatch(pools, stats, rng, 1, { bet: false })[0]);
+  assert.ok(firsts.every((x) => x.bet === false));
+  assert.ok(firsts.some((x) => x.source === "favoritas"), firsts.filter((x) => x.source === "favoritas").length + " favoritas");
+});
