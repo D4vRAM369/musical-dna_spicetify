@@ -177,3 +177,14 @@ test("almacén corrupto: aviso una vez, sin romper", async () => {
   assert.equal(env.L.notes.filter((n) => n.isError).length, 1);
   assert.match(textOf(env.L.modal.content), /La apuesta del bandido/);
 });
+
+test("▶ varias veces en la misma sugerencia: una sola prueba mientras esté pendiente", async () => {
+  const env = await boot({ idb: fakeIDB(LI([r("a", 5)])) });
+  const root = await open(env);
+  click(root, findButton(root, "▶"));
+  await tick();
+  click(root, findButton(root, "▶"));
+  await tick();
+  assert.equal(JSON.parse(env.disk["musical-dna:v1"]).trials.length, 1);
+  assert.equal(env.L.played, "a"); // sigue reproduciendo
+});

@@ -633,12 +633,18 @@
       }
 
       function tryIt(c, action) {
-        // Primero anotar (síncrono), después actuar: si Spotify falla, la prueba ya está guardada.
-        store = addTrial(store, { uri: c.uri, source: c.source, why: c.why, at: Date.now(), action });
-        saveStore(store);
-        session.clicked.add(c.uri);
+        // Si ya hay una prueba de esta canción esperando resultado, volver a pulsar ▶ solo reproduce:
+        // una sugerencia = una prueba (si no, 3 clics contarían como 3 aciertos o 3 fallos de la fuente).
+        const now = Date.now();
+        const waiting = store.trials.some((t) => t.uri === c.uri && resolveTrial(t, data.li.records, now) === "pending");
+        if (!waiting) {
+          // Primero anotar (síncrono), después actuar: si Spotify falla, la prueba ya está guardada.
+          store = addTrial(store, { uri: c.uri, source: c.source, why: c.why, at: now, action });
+          saveStore(store);
+          session.clicked.add(c.uri);
+        }
         Spicetify.Player.playUri(c.uri);
-        Spicetify.showNotification("Anotado: veremos si te gusta");
+        Spicetify.showNotification(waiting ? "Ya estaba anotada: sigue sonando" : "Anotado: veremos si te gusta");
         setTimeout(render, 0); // redibujar DESPUÉS del clic: el botón pulsado sigue en el DOM mientras el clic sube (Error #6)
       }
 
