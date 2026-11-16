@@ -1,0 +1,19 @@
+{
+  "name": "musical-dna",
+  "version": "0.1.0",
+  "description": "Spicetify extension: explainable taste profile and a tiny bandit recommender built on Listening Intelligence's local history. 100% local.",
+  "main": "musical-dna.js",
+  "private": true,
+  "license": "MIT",
+  "author": "D4vRAM369",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/D4vRAM369/musical-dna_spicetify.git"
+  },
+  "homepage": "https://github.com/D4vRAM369/musical-dna_spicetify#readme",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": ["spicetify", "spotify", "spicetify-extension", "recommender", "multi-armed-bandit", "thompson-sampling", "privacy"]
+}

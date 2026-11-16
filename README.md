@@ -1,81 +1,83 @@
 # Musical DNA
 
-Extensión de [Spicetify](https://spicetify.app) que te enseña **qué define tu gusto** y te sugiere canciones con un pequeño recomendador que **aprende de lo que escuchas**. Todo se queda en tu equipo.
+🇬🇧 English · 🇪🇸 [Español](README-ES.md)
 
-> **Estado: v0.1 en desarrollo.** Necesita [Listening Intelligence](https://github.com/D4vRAM369/listening-intelligence_spicetify): usa su historial. La interfaz está en español.
+A [Spicetify](https://spicetify.app) extension that shows you **what defines your taste** and suggests songs with a small recommender that **learns from what you listen to**. Everything stays on your machine.
 
-*English summary: a Spicetify extension that reads Listening Intelligence's local history (read-only) to show your "seed" songs with explainable scores, and suggests tracks from three sources (your history, your liked songs, songs similar to them) using a Thompson-sampling multi-armed bandit that learns which source works best for you. UI in Spanish.*
+> **Status: v0.1 in development.** It needs [Listening Intelligence](https://github.com/D4vRAM369/listening-intelligence_spicetify): it uses its history. The interface is in Spanish.
 
-## Qué hace
+## What it does
 
-Un icono (una doble hélice) en la barra superior abre un panel con tres pestañas:
+An icon (a double helix) in Spotify's top bar opens a panel with three tabs:
 
-| Pestaña | Qué ves |
+| Tab | What you see |
 |---|---|
-| **Para ti** | Tu **sistema solar** y debajo las sugerencias. Arriba, «la apuesta del bandido». Cada una dice **por qué** está ahí y cuánto acierta su fuente. ▶ la reproduce, ＋ la guarda en «Canciones que te gustan» (pasa a ✓), ✗ la descarta para siempre (↺ deshace). Al bajar se cargan solas más tandas. |
-| **Cómo aprende** | Aciertos de cada fuente, con qué probabilidad cree el bandido que cada una es la mejor y tus últimas pruebas (✓ / ✗ / ⏳). |
-| **Tu ADN** | Tus canciones semilla en tres horizontes (7 días, 30 días, todo), con sus señales y un aviso cuando hay pocos datos. Y tu «antigusto»: lo que siempre saltas. |
+| **Para ti** (For you) | Your **solar system**, with the suggestions below. On top, "the bandit's bet". Each suggestion says **why** it is there and how well its source performs. ▶ plays it, ＋ saves it to "Liked Songs" (turns into ✓), ✗ dismisses it forever (↺ undoes). More batches load as you scroll down. |
+| **Cómo aprende** (How it learns) | Hits for each source, the probability the bandit assigns to each being the best, and your latest trials (✓ / ✗ / ⏳). |
+| **Tu ADN** (Your DNA) | Your seed songs over three horizons (7 days, 30 days, all time), with their signals and a notice when there is little data. Plus your "anti-taste": what you always skip. |
 
 <p align="center">
-  <img src="assets/para-ti.png" width="380" alt="Pestaña Para ti: sistema solar con Favoritas al 51 %, Similares al 49 % e Historial en gris; debajo, la apuesta del bandido y las sugerencias con botones reproducir, guardar y descartar">
+  <img src="assets/para-ti.png" width="380" alt="For you tab: solar system with Favoritas at 51 %, Similares at 49 % and Historial greyed out; below, the bandit's bet and suggestions with play, save and dismiss buttons">
 </p>
 
-### Tu sistema solar
+### Your solar system
 
-Tú eres el sol y cada fuente es un planeta que orbita a tu alrededor. **Cuanto más grande y brillante, más probable es que sea tu mejor fuente** según lo aprendido. Una fuente sin candidatos sale en gris.
+You are the sun and each source is a planet orbiting you. **The bigger and brighter, the more likely it is your best source** based on what it has learned. A source with no candidates is shown in grey.
 
-**Pulsa un planeta** para ver solo las sugerencias de esa fuente, su ficha (aciertos, probabilidad, pruebas pendientes) y un botón para poner una de sus canciones. Pulsa el sol (TÚ) o el mismo planeta para volver a verlas todas.
+**Click a planet** to see only that source's suggestions, its card (hits, probability, pending trials) and a button to play one of its songs. Click the sun (TÚ) or the same planet again to see everything.
 
 <p align="center">
-  <img src="assets/planeta.png" width="380" alt="Planeta Favoritas pulsado: resaltado, ficha con aciertos y probabilidad, botón Poner una de Favoritas y la lista filtrada">
+  <img src="assets/planeta.png" width="380" alt="Favoritas planet selected: highlighted, card with hits and probability, a 'play one from Favoritas' button and the filtered list">
   &nbsp;
-  <img src="assets/tanda-2.png" width="380" alt="Lista con el separador Tanda 2: al bajar se añaden más sugerencias y las pestañas siguen arriba">
+  <img src="assets/tanda-2.png" width="380" alt="List with the 'Tanda 2' (batch 2) separator: more suggestions are added as you scroll and the tabs stay on top">
 </p>
 
-Al llegar al final de la lista se añade otra tanda («✦ Tanda 2 ✦»…), sin repetir nada de lo que ya has visto, hasta que no quedan más candidatos. Si tienes activado «reducir movimiento» en el sistema, nada se anima.
+When you reach the end of the list another batch is added ("✦ Tanda 2 ✦"…), never repeating anything you have already seen, until no candidates remain. If "reduce motion" is enabled on your system, nothing animates.
 
-### Cómo aprende
+### How it learns
 
-Inspirado en el sistema de recomendaciones de Spotify (*bandidos multibrazo*; McInerney et al., 2018, «Explore, Exploit, and Explain»), en pequeño:
+Inspired by Spotify's recommendation system (*multi-armed bandits*; McInerney et al., 2018, "Explore, Exploit, and Explain"), in miniature:
 
-1. Hay tres fuentes: **tu historial** (lo que te gusta y hace días que no suena), **tus favoritas** (las guardadas que menos pones) y **similares** (canciones top de artistas relacionados con tus semillas).
-2. Cuando pulsas ▶, se anota la prueba: si Listening Intelligence registra esa canción en las 6 h siguientes y la escuchas ≥30 s, la fuente suma un acierto; si la saltas, un fallo. Pulsar ▶ otra vez en la misma sugerencia no cuenta doble.
-3. ＋ (guardar) es un acierto al momento y ✗ (descartar) un fallo al momento: son las señales más claras que le das.
-4. Arriba va «la apuesta»: la fuente que más acierta. El resto se reparte con *Thompson sampling*: cada fuente es una «campana» de lo que podría valer; se saca un número de cada una y gana el mayor. Así, **cuanto menos sabe de una fuente, más la prueba; cuanto más sabe, más apuesta por la que acierta**, sin ningún porcentaje fijo de exploración.
-5. Para que haya variedad, como mucho 2 canciones del mismo artista por tanda.
+1. There are three sources: **your history** (what you like and haven't played in days), **your favourites** (saved songs you play least) and **similar** (top tracks from artists related to your seeds).
+2. When you press ▶ a trial is recorded: if Listening Intelligence logs that song within the next 6 h and you listen ≥30 s, the source scores a hit; if you skip it, a miss. Pressing ▶ again on the same suggestion doesn't count twice.
+3. ＋ (save) is an instant hit and ✗ (dismiss) an instant miss: they are the clearest signals you give it.
+4. On top goes "the bet": the source that hits most. The rest is shared out with *Thompson sampling*: each source is a "bell curve" of what it might be worth; a number is drawn from each and the highest wins. So **the less it knows about a source, the more it tries it; the more it knows, the more it bets on the one that hits**, with no fixed exploration percentage.
+5. For variety, at most 2 songs by the same artist per batch.
 
-Nunca te sugiere lo que sonó en las últimas 72 h, lo que siempre saltas ni lo que descartaste.
+It never suggests what played in the last 72 h, what you always skip, or what you dismissed.
 
-## Privacidad
+## Privacy
 
-- **Nada sale de tu equipo.** Sin servidor ni cuentas.
-- Lee la base de datos de Listening Intelligence **en solo lectura**: nunca la modifica.
-- Para favoritas y similares usa APIs internas del propio cliente de Spotify. Si fallan, esas fuentes se desactivan y el resto sigue.
-- Sus propios datos (las pruebas) están en `musical-dna:v1`. **Exportar** y **Borrar** en el pie del panel.
-- ＋ y ✗ solo tocan tu biblioteca cuando tú lo pides: ＋ guarda, ✓ quita; ✗ nunca borra nada de tu biblioteca.
+- **Nothing leaves your machine.** No server, no accounts.
+- It reads Listening Intelligence's database **read-only**: it never modifies it.
+- For favourites and similar tracks it uses internal APIs of the Spotify client itself. If they fail, those sources are disabled and the rest keep working.
+- Its own data (the trials) lives in `musical-dna:v1`. **Export** and **Delete** are in the panel footer.
+- ＋ and ✗ only touch your library when you ask: ＋ saves, ✓ removes; ✗ never deletes anything from your library.
 
-## Instalación
+## Installation
 
-**Requisitos:** Spotify de escritorio con Spicetify y Listening Intelligence instalada.
+**Requirements:** Spotify desktop with Spicetify and Listening Intelligence installed.
 
 ```bash
 cp musical-dna.js "$(spicetify path userdata)/Extensions/"
-spicetify config extensions musical-dna.js     # se AÑADE a las que ya tengas
+spicetify config extensions musical-dna.js     # ADDS to the ones you already have
 spicetify apply
 ```
 
-Para desinstalar: `spicetify config extensions musical-dna.js-` y `spicetify apply`.
+To uninstall: `spicetify config extensions musical-dna.js-` then `spicetify apply`.
 
-## Desarrollo
+## Development
 
-Un solo archivo, por capas: lógica pura arriba (exportada como `core`, sin Spotify), lectura de datos y adaptadores en medio, interfaz abajo.
+A single file, in layers: pure logic on top (exported as `core`, no Spotify needed), data reading and adapters in the middle, interface at the bottom.
 
 ```bash
-node --test tests/     # Node 20+, sin dependencias
-# Para desarrollar sin copiar tras cada cambio: enlace simbólico (una vez) y luego solo `spicetify apply`
+npm test     # Node 20+, no dependencies
+# To develop without copying after every change: symlink (once), then just `spicetify apply`
 ln -sfn "$PWD/musical-dna.js" "$(spicetify path userdata)/Extensions/musical-dna.js"
 ```
 
-## Licencia
+Comments and the UI are in Spanish.
+
+## License
 
 [MIT](LICENSE).
