@@ -1,5 +1,8 @@
 # Musical DNA
 
+<img width="1280" height="640" alt="social-preview-EN" src="https://github.com/user-attachments/assets/f01cc735-79d4-429f-a325-09a704ffe292" />
+
+
 🇬🇧 English · 🇪🇸 [Español](README-ES.md)
 
 A [Spicetify](https://spicetify.app) extension that shows you **what defines your taste** and suggests songs with a small recommender that **learns from what you listen to**. Everything stays on your machine.
