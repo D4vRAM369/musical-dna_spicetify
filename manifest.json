@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Musical DNA",
+    "description": "Spicetify extension: explainable taste profile and a small bandit recommender that learns from your local Spotify history. 100% local.",
+    "preview": "assets/planeta.png",
+    "main": "musical-dna.js",
+    "readme": "README.md",
+    "authors": [
+      {
+        "name": "D4vRAM369",
+        "url": "https://github.com/D4vRAM369"
+      }
+    ],
+    "tags": [
+      "discovery",
+      "recommendation",
+      "taste",
+      "privacy",
+      "local"
+    ]
+  }
+]
